@@ -1,0 +1,63 @@
+# Hapio Admin — files that must not be committed.
+# https://git-scm.com/docs/gitignore
+
+# --- Secrets -----------------------------------------------------------------
+# .env files hold HAPIO_API_TOKEN, which grants access to your Hapio project.
+# Only the template is tracked; copy it to .env.local and fill it in.
+.env
+.env.*
+!.env.example
+
+# Local HTTPS certificates and keys
+*.pem
+*.key
+
+# --- Dependencies ------------------------------------------------------------
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# --- Build output and caches ---------------------------------------------------
+# Next.js build output, dev server cache and logs (.next/dev)
+/.next/
+/out/
+/build
+
+# TypeScript incremental build info, and route types Next.js regenerates on
+# `next dev`, `next build` and `next typegen`
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Testing -----------------------------------------------------------------
+# Vitest coverage reports (`vitest run --coverage`)
+/coverage
+
+# --- Logs ----------------------------------------------------------------------
+# Includes output redirected from `npm run dev` or `npm run mock`
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Deployment ----------------------------------------------------------------
+.vercel
+
+# --- Editors and OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- Claude Code ---------------------------------------------------------------
+# Personal settings and worktrees; shared config such as .claude/launch.json
+# (the dev server preview) stays tracked.
+.claude/settings.local.json
+.claude/worktrees/
