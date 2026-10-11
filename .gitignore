@@ -39,7 +39,7 @@ next-env.d.ts
 # Playwright: end-to-end build, reports and traces
 /.next-e2e*/
 /playwright-report/
-/test-results/
+/test-results*/
 /blob-report/
 /playwright/.cache/
 
