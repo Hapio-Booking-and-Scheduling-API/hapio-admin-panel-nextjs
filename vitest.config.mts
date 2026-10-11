@@ -9,5 +9,8 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
     env: { TZ: "Europe/Stockholm" },
+    restoreMocks: true,
+    unstubEnvs: true,
+    unstubGlobals: true,
   },
 })

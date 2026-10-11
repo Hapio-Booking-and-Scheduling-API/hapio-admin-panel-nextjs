@@ -1,5 +1,6 @@
 "use client"
 
+import { useQueryClient } from "@tanstack/react-query"
 import { CalendarCheckIcon, PencilIcon, PowerIcon, Trash2Icon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -26,7 +27,7 @@ import { humanizeDuration, isZeroDuration, parseDuration } from "@/lib/format/du
 import { omitKeys } from "@/lib/format/json"
 import { formatPrice } from "@/lib/format/price"
 import { hapio } from "@/lib/hapio/client"
-import { useHapioMutation, useService } from "@/lib/hapio/hooks"
+import { hapioKey, useHapioMutation, useService } from "@/lib/hapio/hooks"
 import { WEEKDAYS, type DayTime, type Service, type ServiceInput } from "@/lib/hapio/types"
 
 import { BookableSlotsExplorer } from "./bookable-slots"
@@ -42,6 +43,7 @@ type Tab = (typeof TABS)[number]
 
 export function ServiceDetail({ id }: { id: string }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const query = useService(id)
   const resources = useServiceResources(id)
   const [editing, setEditing] = useState(false)
@@ -57,14 +59,24 @@ export function ServiceDetail({ id }: { id: string }) {
   )
   const remove = useHapioMutation(() => hapio.services.delete(id), {
     success: "Service deleted",
-    onSuccess: () => router.push("/services"),
+    onSuccess: () => {
+      router.push("/services")
+      // Drop the deleted service (and its resources and slots) so the refresh after the
+      // mutation doesn't refetch it (404).
+      queryClient.removeQueries({ queryKey: hapioKey("services", "detail", id) })
+      queryClient.removeQueries({ queryKey: hapioKey("services", id) })
+    },
   })
   const replace = useHapioMutation((body: unknown) => hapio.services.replace(id, body as ServiceInput), {
     success: "Service replaced",
+    // The Replace dialog shows the error inline.
+    toastErrors: false,
   })
 
-  if (query.isLoading) return <DetailSkeleton />
-  if (query.error || !query.data) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
+  // Keep showing the service while we have it, even if a later refetch failed.
+  if (!query.data) {
+    return query.error ? <ErrorAlert error={query.error} onRetry={() => query.refetch()} /> : <DetailSkeleton />
+  }
 
   const service = query.data
 
@@ -119,7 +131,7 @@ export function ServiceDetail({ id }: { id: string }) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="slots">
+            <TabsTrigger value="slots" aria-label="Bookable slots">
               <span className="sm:hidden">Slots</span>
               <span className="hidden sm:inline">Bookable slots</span>
             </TabsTrigger>

@@ -1,5 +1,6 @@
 "use client"
 
+import { useQueryClient } from "@tanstack/react-query"
 import {
   BanIcon,
   CheckCircle2Icon,
@@ -12,7 +13,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useLayoutEffect, useState } from "react"
 
 import { DataTable, type Column } from "@/components/data-table/data-table"
 import { BookingStatusBadge } from "@/components/entity/badges"
@@ -45,8 +46,8 @@ import {
 import { formatDateTime } from "@/lib/format/datetime"
 import { formatPrice } from "@/lib/format/price"
 import { hapio } from "@/lib/hapio/client"
-import { useBookingGroup, useHapioMutation } from "@/lib/hapio/hooks"
-import type { BookingEmbedded, BookingGroupPut } from "@/lib/hapio/types"
+import { hapioKey, useBookingGroup, useHapioMutation } from "@/lib/hapio/hooks"
+import type { BookingEmbedded, BookingGroup, BookingGroupPut } from "@/lib/hapio/types"
 
 import { BookingGroupEditDialog } from "./booking-group-form"
 
@@ -60,26 +61,42 @@ function MetadataBlock({ value }: { value: unknown }) {
 
 export function BookingGroupDetail({ id }: { id: string }) {
   const router = useRouter()
-  const query = useBookingGroup(id)
+  const queryClient = useQueryClient()
+  // Set once the group is deleted: stop observing it, so nothing refetches it (that would
+  // only 404), and keep showing it until the navigation away has finished.
+  const [deleted, setDeleted] = useState<BookingGroup | null>(null)
+  // Next keeps this page mounted (hidden) after navigating away; if it's shown again,
+  // e.g. on Back, load the group afresh so the 404 shows instead of the deleted group.
+  useLayoutEffect(() => () => setDeleted(null), [])
+  const query = useBookingGroup(deleted ? null : id)
+  const data = deleted ?? query.data
   const actions = useBookingActions()
   const [editing, setEditing] = useState(false)
   const [canceling, setCanceling] = useState<BookingEmbedded | null>(null)
   const [ungrouping, setUngrouping] = useState<BookingEmbedded | null>(null)
   const [deletingBooking, setDeletingBooking] = useState<BookingEmbedded | null>(null)
-  useBreadcrumbLabel(id, query.data ? `Group ${shortId(query.data.id)}` : undefined)
+  useBreadcrumbLabel(id, data ? `Group ${shortId(data.id)}` : undefined)
 
   const remove = useHapioMutation(() => hapio.bookingGroups.delete(id), {
     success: "Booking group deleted",
-    onSuccess: () => router.push("/booking-groups"),
+    onSuccess: () => {
+      router.push("/booking-groups")
+      setDeleted(query.data ?? null)
+      // Runs before the mutation hook's blanket invalidation, which would refetch it.
+      queryClient.removeQueries({ queryKey: hapioKey("booking-groups", "detail", id) })
+    },
   })
   const replace = useHapioMutation((body: unknown) => hapio.bookingGroups.replace(id, body as BookingGroupPut), {
     success: "Booking group replaced",
+    // RawJsonCard shows the error inside its dialog.
+    toastErrors: false,
   })
 
   if (query.isLoading) return <DetailSkeleton />
-  if (query.error || !query.data) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
+  // A failed refetch keeps the data we have; only show the error when there's nothing else to show.
+  if (!data) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
 
-  const group = query.data
+  const group = data
   const bookings = sortByStart(group.bookings)
   const span = groupSpan(bookings)
   const count = bookings.length
@@ -196,9 +213,13 @@ export function BookingGroupDetail({ id }: { id: string }) {
             </Button>
             <ConfirmDialog
               title={`Delete group ${shortId(group.id)}?`}
-              description={`This permanently deletes the group and ${
-                count === 1 ? "its 1 booking" : `all ${count} of its bookings`
-              }. This can't be undone. To keep the bookings, remove them from the group first.`}
+              description={
+                count
+                  ? `This permanently deletes the group and ${
+                      count === 1 ? "its 1 booking" : `all ${count} of its bookings`
+                    }. This can't be undone. To keep the bookings, remove them from the group first.`
+                  : "This permanently deletes the group. It has no bookings. This can't be undone."
+              }
               confirmLabel={count ? "Delete group and bookings" : "Delete group"}
               destructive
               onConfirm={() => remove.mutateAsync()}

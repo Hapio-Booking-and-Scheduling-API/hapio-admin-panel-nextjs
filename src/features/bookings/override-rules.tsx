@@ -2,69 +2,27 @@
 
 import { ChevronRightIcon } from "lucide-react"
 import { useState } from "react"
-import { useWatch, type Control, type FieldPath } from "react-hook-form"
+import { get, useFormState, useWatch, type Control, type FieldPath } from "react-hook-form"
 
 import { FormField } from "@/components/form/form-field"
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FieldGroup } from "@/components/ui/field"
 import { Switch } from "@/components/ui/switch"
-import type { BookingIgnoreFlags } from "@/lib/hapio/types"
 
-export type IgnoreFlag = keyof BookingIgnoreFlags | "ignore_cancelation_threshold"
+import {
+  CREATE_FLAGS,
+  IGNORE_FLAGS,
+  type IgnoreFlagValues,
+} from "./override-rules-model"
 
-/** Form values every booking form with an "Override rules" section carries. */
-export type IgnoreFlagValues = Record<IgnoreFlag, boolean>
-
-export const IGNORE_FLAG_DEFAULTS: IgnoreFlagValues = {
-  ignore_schedule: false,
-  ignore_fully_booked: false,
-  ignore_bookable_slots: false,
-  ignore_booking_window: false,
-  ignore_cancelation_threshold: false,
-}
-
-export const IGNORE_FLAGS: Array<{ key: IgnoreFlag; label: string; description: string; editOnly?: boolean }> = [
-  {
-    key: "ignore_schedule",
-    label: "Ignore schedule",
-    description: "Allow times outside the resource's schedule. Also ignores bookable slots.",
-  },
-  {
-    key: "ignore_fully_booked",
-    label: "Ignore fully booked",
-    description: "Allow the booking even when the resource is already fully booked (overbooking).",
-  },
-  {
-    key: "ignore_bookable_slots",
-    label: "Ignore bookable slots",
-    description:
-      "Allow start and end times that don't match the service's bookable slots, and custom buffer times.",
-  },
-  {
-    key: "ignore_booking_window",
-    label: "Ignore booking window",
-    description: "Allow times outside the service's booking window (how soon or how far ahead it can be booked).",
-  },
-  {
-    key: "ignore_cancelation_threshold",
-    label: "Ignore cancelation threshold",
-    description: "Allow canceling after the service's cancelation threshold has passed.",
-    editOnly: true,
-  },
-]
-
-const CREATE_FLAGS = IGNORE_FLAGS.filter((f) => !f.editOnly)
-
-/** The `ignore_*` flags that are switched on, ready to merge into a request body. */
-export function activeIgnoreFlags(values: IgnoreFlagValues, options: { cancelation?: boolean } = {}) {
-  const flags: Partial<IgnoreFlagValues> = {}
-  for (const { key, editOnly } of IGNORE_FLAGS) {
-    if (editOnly && !options.cancelation) continue
-    if (values[key]) flags[key] = true
-  }
-  return flags
-}
+export {
+  IGNORE_FLAG_DEFAULTS,
+  IGNORE_FLAGS,
+  activeIgnoreFlags,
+  type IgnoreFlag,
+  type IgnoreFlagValues,
+} from "./override-rules-model"
 
 /** A bordered, collapsible block inside a form. */
 export function CollapsibleSection({
@@ -79,13 +37,19 @@ export function CollapsibleSection({
   description?: string
   badge?: React.ReactNode
   defaultOpen?: boolean
-  /** Keep the section open, e.g. while it contains errors. */
+  /** Open the section whenever this turns true, e.g. when a field inside it gets an error. */
   forceOpen?: boolean
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [open, setOpen] = useState(defaultOpen || forceOpen)
+  // Opens on errors, then stays open (while the user fixes them) until closed by hand.
+  const [forced, setForced] = useState(forceOpen)
+  if (forced !== forceOpen) {
+    setForced(forceOpen)
+    if (forceOpen) setOpen(true)
+  }
   return (
-    <Collapsible open={open || forceOpen} onOpenChange={setOpen} className="rounded-lg border">
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border">
       <CollapsibleTrigger asChild>
         <button
           type="button"
@@ -121,7 +85,9 @@ export function OverrideRulesSection<T extends IgnoreFlagValues>({
   description?: string
 }) {
   const flags = includeCancelation ? IGNORE_FLAGS : CREATE_FLAGS
-  const values = useWatch({ control, name: flags.map((f) => f.key) as Array<FieldPath<T>> }) as unknown[]
+  const names = flags.map((f) => f.key) as Array<FieldPath<T>>
+  const values = useWatch({ control, name: names }) as unknown[]
+  const { errors } = useFormState({ control, name: names })
   const active = values.filter(Boolean).length
   const ignoreSchedule = !!values[flags.findIndex((f) => f.key === "ignore_schedule")]
 
@@ -131,6 +97,7 @@ export function OverrideRulesSection<T extends IgnoreFlagValues>({
       description={description ?? "Bypass availability checks. Each needs the matching token ability."}
       badge={active > 0 ? <Badge variant="secondary">{active} on</Badge> : undefined}
       defaultOpen={active > 0}
+      forceOpen={names.some((name) => !!get(errors, name))}
     >
       {flags.map((flag) => (
         <FormField

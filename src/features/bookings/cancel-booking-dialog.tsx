@@ -92,8 +92,8 @@ export function CancelBookingDialog({
         </Field>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Keep booking</AlertDialogCancel>
-          <Button variant="destructive" onClick={confirm} disabled={pending || !booking}>
-            {pending && <Spinner />}
+          <Button variant="destructive" onClick={confirm} disabled={pending || !booking} aria-busy={pending}>
+            {pending && <Spinner aria-hidden />}
             Cancel booking
           </Button>
         </AlertDialogFooter>

@@ -1,6 +1,6 @@
 "use client"
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { keepPreviousData } from "@tanstack/react-query"
 
 import {
   hapio,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/hapio/client"
 import { hapioKey } from "@/lib/hapio/hooks"
 import type { Paginated, Uuid } from "@/lib/hapio/types"
+import { useHapioQuery } from "@/lib/hapio/use-hapio-query"
 
 /** Loads every page (up to `maxPages`) of a paginated endpoint. */
 async function fetchPages<T>(load: (page: number) => Promise<Paginated<T>>, maxPages = 10): Promise<T[]> {
@@ -24,7 +25,7 @@ async function fetchPages<T>(load: (page: number) => Promise<Paginated<T>>, maxP
 }
 
 export function useResourceServices(resourceId: Uuid) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "services"),
     queryFn: ({ signal }) => hapio.resources.services.list(resourceId, signal),
   })
@@ -35,7 +36,7 @@ export function useScheduleBlocks(
   params: ScheduleBlockListParams,
   options: { enabled?: boolean } = {}
 ) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "schedule-blocks", params),
     queryFn: ({ signal }) => hapio.scheduleBlocks(resourceId).list(params, signal),
     placeholderData: keepPreviousData,
@@ -48,7 +49,7 @@ export function useRecurringSchedules(
   params: RecurringScheduleListParams,
   options: { enabled?: boolean } = {}
 ) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "recurring-schedules", params),
     queryFn: ({ signal }) => hapio.recurringSchedules(resourceId).list(params, signal),
     placeholderData: keepPreviousData,
@@ -57,7 +58,7 @@ export function useRecurringSchedules(
 }
 
 export function useRecurringScheduleBlocks(resourceId: Uuid, scheduleId: Uuid) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "recurring-schedules", scheduleId, "blocks"),
     queryFn: ({ signal }) =>
       fetchPages((page) =>
@@ -68,7 +69,7 @@ export function useRecurringScheduleBlocks(resourceId: Uuid, scheduleId: Uuid) {
 
 /** The computed open time of a resource at a location (all pages). */
 export function useResourceSchedule(resourceId: Uuid, params: Omit<ResourceScheduleParams, "page" | "per_page"> | null) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "schedule", params),
     queryFn: ({ signal }) =>
       fetchPages((page) => hapio.resources.schedule(resourceId, { ...params!, page, per_page: 100 }, signal), 5),
@@ -79,7 +80,7 @@ export function useResourceSchedule(resourceId: Uuid, params: Omit<ResourceSched
 
 /** Fully booked spans of a resource (all pages). */
 export function useResourceFullyBooked(resourceId: Uuid, params: Omit<FullyBookedParams, "page" | "per_page"> | null) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", resourceId, "fully-booked", params),
     queryFn: ({ signal }) =>
       fetchPages((page) => hapio.resources.fullyBooked(resourceId, { ...params!, page, per_page: 100 }, signal), 5),

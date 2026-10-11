@@ -29,6 +29,29 @@ HAPIO_API_TOKEN=dev
 HAPIO_BASE_URL=http://127.0.0.1:4010/v1
 ```
 
+### Demo data in your own project (optional)
+
+A new Hapio project is empty, and you need locations, resources, schedules and services
+before anything can be booked. `npm run seed` fills your project with the same demo data
+the mock uses, so you can try every page:
+
+- 2 locations (Stockholm, New York) in different time zones.
+- 3 resources (Anna, Ben, Room A) with Mon–Fri 09–17 schedules and some blocked hours next week.
+- 3 services, one of each type (fixed, flexible and day), linked to the resources.
+- About a dozen bookings: past, upcoming, temporary and canceled, plus a booking group.
+
+```bash
+npm run seed                 # shows the target project and asks before writing anything
+npm run seed -- --dry-run    # list what would be created, write nothing
+npm run seed -- --clean      # delete everything the seeder created
+```
+
+It uses `HAPIO_API_TOKEN` and `HAPIO_BASE_URL` from `.env.local` or `.env`. Every record it
+creates has `metadata.seed = "hapio-admin-demo"`. That tag is how `--clean` finds the records,
+and you can filter on it in the panel. The token needs create and delete abilities for the
+entities. Past bookings also need `booking:ignore_booking_window`. Without it, the seeder skips
+those bookings and creates everything else. Add `--yes` to skip the confirmation prompt.
+
 ## How it works
 
 - **The token stays on the server.** The browser calls `/api/hapio/*`. The proxy route
@@ -56,10 +79,36 @@ HAPIO_BASE_URL=http://127.0.0.1:4010/v1
 | --- | --- |
 | `npm run dev` | Dev server on 127.0.0.1:3000 |
 | `npm run build` / `npm start` | Production build / server (127.0.0.1) |
-| `npm run typecheck` | Generates route types and runs `tsc` |
+| `npm run typecheck` | Route types + `tsc` for the app and the e2e specs |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest unit tests for the helpers (query builder, durations, prices, time zones) |
+| `npm test` | Vitest unit tests |
+| `npm run test:e2e` | Build `.next-e2e`, then run the Playwright suite against the mock |
+| `npm run test:e2e:only` | Rerun Playwright without rebuilding (e.g. `-- e2e/bookings`) |
+| `npm run test:all` | Typecheck, lint, unit tests and e2e, in that order |
 | `npm run mock` | In-memory mock Hapio API on 127.0.0.1:4010 |
+| `npm run seed` | Optional: add demo data to your Hapio project (`--clean` removes it) |
+
+## Tests
+
+There are two layers of tests. Neither one touches a real Hapio project.
+
+- **Unit tests (Vitest).** These cover the pure logic: the typed client (all 60 operations),
+  the proxy route handler, query and filter serialisation, error mapping, retry policy,
+  durations, prices, time zones and DST, and the form models. The form models are the parts
+  of each form that build request bodies and map validation errors back to fields.
+- **End-to-end tests (Playwright).** Each worker starts its own mock Hapio API and a
+  production build of the panel. The tests then go through every page, filter, form, dialog
+  and action in Chrome, plus the error states and the proxy's guards. They also check
+  accessibility with axe and run a pass at phone width.
+  - Data is reset before every test.
+  - The clock is fixed at Wed 21 Oct 2026, so 7- and 30-day ranges cross daylight-saving
+    changes.
+  - Every request body is checked.
+  - See [e2e/README.md](e2e/README.md) for fixtures and conventions.
+
+The mock is deterministic when it's started with `MOCK_NOW` and `MOCK_SEED`. Set `MOCK_LOG=0`
+to silence its request log. The test helpers `POST /__reset?now=…&empty=1` and `GET /__health`
+live outside `/v1`.
 
 ## Managed in the Hapio portal, not here
 

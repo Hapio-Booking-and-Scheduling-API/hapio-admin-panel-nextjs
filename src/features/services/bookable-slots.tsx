@@ -1,8 +1,6 @@
 "use client"
 
-import { TZDate } from "@date-fns/tz"
 import type { UseQueryResult } from "@tanstack/react-query"
-import { addDays, format, parseISO } from "date-fns"
 import {
   CalendarPlusIcon,
   CalendarSearchIcon,
@@ -38,88 +36,33 @@ import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { browserTimeZone, formatDateTime, toHapioDateTime, todayIn } from "@/lib/format/datetime"
-import { durationToMinutes, formatDuration, humanizeDuration, isValidDuration, isZeroDuration } from "@/lib/format/duration"
+import { isValidDuration, isZeroDuration } from "@/lib/format/duration"
 import type { BookableSlotParams } from "@/lib/hapio/client"
 import { isHapioError } from "@/lib/hapio/errors"
 import { indexById, useAllLocations } from "@/lib/hapio/hooks"
-import type { AnyBookableSlot, BookableSlotFlexible, ResourceService, Service } from "@/lib/hapio/types"
+import type { AnyBookableSlot, ResourceService, Service } from "@/lib/hapio/types"
 
 import { useBookableSlots } from "./hooks"
 import { OptionalDuration } from "./optional-duration"
+import {
+  PRESETS,
+  addDaysTo,
+  bookingHref,
+  defaultLength,
+  endOptions,
+  fallbackLength,
+  hasEndRange,
+  lengthLabel,
+  presetRange,
+  toZoned,
+  type Preset,
+} from "./slots-model"
 
 // ---------------------------------------------------------------------------
 // Helpers
 
-const PRESETS = { today: { label: "Today", days: 1 }, "7d": { label: "Next 7 days", days: 7 }, "30d": { label: "Next 30 days", days: 30 } }
-type Preset = keyof typeof PRESETS
-
-/** Max end options offered per slot. */
-const MAX_END_OPTIONS = 120
-
-const addDaysTo = (date: string, days: number) => format(addDays(parseISO(date), days), "yyyy-MM-dd")
-
-function presetRange(preset: Preset, timeZone: string) {
-  const from = todayIn(timeZone)
-  return { from, to: addDaysTo(from, PRESETS[preset].days - 1) }
-}
-
-/** Hapio timestamp of an instant, in the location's zone. */
-const toZoned = (time: number, timeZone: string) => format(new TZDate(time, timeZone), "yyyy-MM-dd'T'HH:mm:ssxxx")
-
 const fmt = (iso: string, timeZone: string, pattern: string) => formatDateTime(iso, { timeZone, pattern })
 const dayKey = (iso: string, timeZone: string) => fmt(iso, timeZone, "yyyy-MM-dd")
-
-function lengthLabel(ms: number) {
-  const minutes = Math.round(ms / 60_000)
-  return humanizeDuration(formatDuration({ hours: Math.floor(minutes / 60), minutes: minutes % 60 }))
-}
-
-function defaultLength(service: Service): string | null {
-  if (service.type === "flexible") return service.default_duration
-  if (service.type === "day") return service.default_days ? `P${service.default_days}D` : null
-  return null
-}
-
-function fallbackLength(service: Service): string {
-  if (service.type === "flexible") return service.default_duration ?? service.min_duration
-  if (service.type === "day") return `P${service.default_days ?? service.min_days}D`
-  return "PT1H"
-}
-
-const hasEndRange = (slot: AnyBookableSlot): slot is BookableSlotFlexible => "min_ends_at" in slot
-
-/** Valid ends for a flexible/day slot: from the minimum end to the maximum, by step or by day. */
-function endOptions(slot: BookableSlotFlexible, service: Service, timeZone: string): string[] {
-  const min = new Date(slot.min_ends_at).getTime()
-  const max = new Date(slot.ends_at).getTime()
-  const out = [slot.min_ends_at]
-  if (service.type === "day") {
-    // Whole days in the location's wall time, so DST changes keep the end time.
-    let next = addDays(new TZDate(min, timeZone), 1)
-    while (next.getTime() <= max && out.length < MAX_END_OPTIONS) {
-      out.push(toZoned(next.getTime(), timeZone))
-      next = addDays(next, 1)
-    }
-    return out
-  }
-  const stepMinutes = service.type === "flexible" ? durationToMinutes(service.duration_step) : null
-  if (!stepMinutes || stepMinutes <= 0) return max > min ? [...out, slot.ends_at] : out
-  const step = stepMinutes * 60_000
-  for (let t = min + step; t <= max && out.length < MAX_END_OPTIONS; t += step) out.push(toZoned(t, timeZone))
-  return out
-}
-
-function bookingHref(input: {
-  serviceId: string
-  locationId: string
-  resourceId: string | null
-  startsAt: string
-  endsAt: string
-}) {
-  let href = `/bookings/new?service=${input.serviceId}&location=${input.locationId}`
-  if (input.resourceId) href += `&resource=${input.resourceId}`
-  return `${href}&starts_at=${encodeURIComponent(input.startsAt)}&ends_at=${encodeURIComponent(input.endsAt)}`
-}
 
 interface Search {
   params: Omit<BookableSlotParams, "page" | "per_page">
@@ -357,8 +300,12 @@ export function BookableSlotsExplorer({
             </FieldContent>
           </Field>
           <div>
-            <Button type="submit" disabled={slots.isFetching && !slots.isFetchingNextPage}>
-              {slots.isFetching && !slots.isFetchingNextPage ? <Spinner /> : <SearchIcon />} Find slots
+            <Button
+              type="submit"
+              disabled={slots.isFetching && !slots.isFetchingNextPage}
+              aria-busy={slots.isFetching && !slots.isFetchingNextPage}
+            >
+              {slots.isFetching && !slots.isFetchingNextPage ? <Spinner aria-hidden /> : <SearchIcon />} Find slots
             </Button>
           </div>
         </form>
@@ -473,16 +420,21 @@ function SlotResults({
             </span>
           </h3>
           <ul className="divide-y rounded-lg border">
-            {daySlots.map((slot, i) => (
-              <SlotRow key={`${slot.starts_at}-${i}`} slot={slot} dayKey={key} service={service} search={search} />
+            {daySlots.map((slot) => (
+              <SlotRow key={slotKey(slot)} slot={slot} dayKey={key} service={service} search={search} />
             ))}
           </ul>
         </section>
       ))}
       {query.hasNextPage && (
         <div className="flex justify-center">
-          <Button variant="outline" onClick={() => query.fetchNextPage()} disabled={query.isFetchingNextPage}>
-            {query.isFetchingNextPage && <Spinner />}
+          <Button
+            variant="outline"
+            onClick={() => query.fetchNextPage()}
+            disabled={query.isFetchingNextPage}
+            aria-busy={query.isFetchingNextPage}
+          >
+            {query.isFetchingNextPage && <Spinner aria-hidden />}
             Load more
           </Button>
         </div>
@@ -493,6 +445,13 @@ function SlotResults({
 }
 
 const MAX_BADGES = 6
+
+/**
+ * Identifies a slot by its times and resources, so a row starts over (with the minimum
+ * end chosen) when a refetch changes the slot's possible ends or resources.
+ */
+const slotKey = (slot: AnyBookableSlot) =>
+  [slot.starts_at, hasEndRange(slot) ? slot.min_ends_at : "", slot.ends_at, ...slot.resources.map((r) => r.id)].join("|")
 
 function SlotRow({
   slot,

@@ -9,6 +9,7 @@ import {
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -29,7 +30,7 @@ import { formatDateTime } from "@/lib/format/datetime"
 import { humanizeDuration } from "@/lib/format/duration"
 import { formatPrice } from "@/lib/format/price"
 import { hapio } from "@/lib/hapio/client"
-import { useBooking, useHapioMutation } from "@/lib/hapio/hooks"
+import { hapioKey, useBooking, useHapioMutation } from "@/lib/hapio/hooks"
 import type { Booking, BookingPut } from "@/lib/hapio/types"
 
 import { BookingEditDialog } from "./booking-form"
@@ -63,13 +64,17 @@ function MetadataBlock({ value }: { value: unknown }) {
 
 export function BookingDetail({ id }: { id: string }) {
   const router = useRouter()
-  const query = useBooking(id)
+  const queryClient = useQueryClient()
+  // Once deleted, the page keeps showing the booking without fetching it again (a 404)
+  // until the navigation to the list is done.
+  const [deleted, setDeleted] = useState<Booking>()
+  const query = useBooking(deleted ? null : id)
   const actions = useBookingActions()
   const [editing, setEditing] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [moving, setMoving] = useState(false)
 
-  const booking = query.data
+  const booking = deleted ?? query.data
   useBreadcrumbLabel(
     id,
     booking ? `${bookingTitle(booking)} · ${formatDateTime(booking.starts_at, { pattern: "d MMM, HH:mm" })}` : undefined
@@ -77,14 +82,22 @@ export function BookingDetail({ id }: { id: string }) {
 
   const remove = useHapioMutation(() => hapio.bookings.delete(id), {
     success: "Booking deleted",
-    onSuccess: () => router.push("/bookings"),
+    onSuccess: () => {
+      setDeleted(booking)
+      router.push("/bookings")
+      // Drop the deleted booking before the mutation refreshes every Hapio query.
+      queryClient.removeQueries({ queryKey: hapioKey("bookings", "detail", id) })
+    },
   })
   const replace = useHapioMutation((body: unknown) => hapio.bookings.replace(id, body as BookingPut), {
     success: "Booking replaced",
+    // The Replace dialog shows the error itself.
+    toastErrors: false,
   })
 
-  if (query.isLoading) return <DetailSkeleton />
-  if (query.error || !booking) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
+  if (!booking && query.isLoading) return <DetailSkeleton />
+  // A failed refetch keeps the booking we already have on screen.
+  if (!booking) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
 
   const status = bookingStatus(booking)
   const group = booking.booking_group

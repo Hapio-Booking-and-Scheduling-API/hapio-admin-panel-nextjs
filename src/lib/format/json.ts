@@ -29,6 +29,21 @@ export function parseMetadataText(text: string): ParsedJson {
   return { ok: true, value: value as Record<string, unknown> }
 }
 
+/**
+ * Length of the text's JSON object once encoded, also when it is over the limit;
+ * 0 for empty text, null, or anything that isn't a JSON object.
+ */
+export function encodedMetadataLength(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+  try {
+    const value: unknown = JSON.parse(trimmed)
+    return value && typeof value === "object" && !Array.isArray(value) ? JSON.stringify(value).length : 0
+  } catch {
+    return 0
+  }
+}
+
 /** Zod-friendly refinement message, or null when valid. */
 export function metadataError(text: string): string | null {
   const parsed = parseMetadataText(text)

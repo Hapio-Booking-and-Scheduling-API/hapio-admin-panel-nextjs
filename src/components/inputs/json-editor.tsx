@@ -3,7 +3,7 @@
 import { cn } from "cn"
 
 import { Textarea } from "@/components/ui/textarea"
-import { METADATA_MAX_LENGTH, parseMetadataText } from "@/lib/format/json"
+import { encodedMetadataLength, METADATA_MAX_LENGTH, parseMetadataText } from "@/lib/format/json"
 
 /** Textarea for JSON metadata with validity and length feedback. Value is the raw text. */
 export function JsonEditor({
@@ -27,7 +27,8 @@ export function JsonEditor({
   className?: string
 } & Omit<React.ComponentProps<"textarea">, "value" | "onChange">) {
   const parsed = parseMetadataText(value)
-  const length = parsed.ok && parsed.value ? JSON.stringify(parsed.value).length : 0
+  // Counted from the text itself, so an object over the limit shows how far over it is.
+  const length = encodedMetadataLength(value)
   return (
     <div className="space-y-1">
       <Textarea

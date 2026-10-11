@@ -5,11 +5,14 @@
 //   MOCK_PORT=4011 npm run mock         # another port
 //   MOCK_EMPTY=1 npm run mock           # start with no data
 //   MOCK_RATE_LIMIT=5000 npm run mock   # requests per minute before 429 (default 600)
+//   MOCK_NOW=2026-10-21T08:00:00+02:00  # freeze "now" (seed dates, timestamps, slot windows)
+//   MOCK_SEED=1 npm run mock            # deterministic ids and random choices
+//   MOCK_LOG=0 npm run mock             # don't log requests
 //
 // Point the admin panel at it with HAPIO_BASE_URL=http://127.0.0.1:4010/v1 and any
 // non-empty HAPIO_API_TOKEN. Single file, no dependencies (Node 22+).
 //
-// Test helpers outside /v1 (no auth): GET /__health, POST /__reset[?empty=1].
+// Test helpers outside /v1 (no auth): GET /__health, POST /__reset[?empty=1&now=<ISO>&seed=<n>].
 
 import http from "node:http"
 import { randomUUID } from "node:crypto"
@@ -22,6 +25,23 @@ const HOST = "127.0.0.1"
 const BASE = "/v1"
 // Requests per minute before 429 (headers always report it). Raise it for long e2e runs.
 const RATE_LIMIT = Number(process.env.MOCK_RATE_LIMIT) || 600
+const LOG = process.env.MOCK_LOG !== "0"
+
+function parseNow(value, source) {
+  if (!value) return null
+  const ms = Date.parse(value)
+  if (Number.isNaN(ms)) throw new Error(`${source}: not a valid ISO timestamp: ${value}`)
+  return ms
+}
+function parseSeed(value, source) {
+  if (value === undefined || value === null || value === "") return null
+  const n = Number(value)
+  if (!Number.isInteger(n)) throw new Error(`${source}: not an integer: ${value}`)
+  return n
+}
+// Defaults for every reset; /__reset can override them for a single reset.
+const BASE_NOW = parseNow(process.env.MOCK_NOW, "MOCK_NOW")
+const BASE_SEED = parseSeed(process.env.MOCK_SEED, "MOCK_SEED")
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -70,11 +90,44 @@ const all = (preds) => {
   return (rec) => ps.every((p) => p(rec))
 }
 
-// Seeding uses a fake clock so created_at values are distinct and in the past.
+// ---------------------------------------------------------------------------
+// Clock & randomness (fixed when MOCK_NOW / MOCK_SEED are set, for repeatable tests)
+
+let currentNow = BASE_NOW // null → real time
+let currentSeed = BASE_SEED // null → crypto randomness
+let rng = null
+
+/** "Now" in ms, truncated to whole seconds. */
+const clockNow = () => (currentNow ?? Math.floor(Date.now() / SECOND) * SECOND)
+
+function mulberry32(a) {
+  return () => {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+const rand = () => (rng ? rng() : Math.random())
+function uuid() {
+  if (!rng) return randomUUID()
+  const hex = Array.from({ length: 32 }, () => Math.floor(rand() * 16).toString(16))
+  hex[12] = "4"
+  hex[16] = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)
+  const h = hex.join("")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+// Seeding uses a fake clock so created_at values are distinct and in the past. With a
+// fixed "now", later writes tick forward one second each so timestamps stay unique and
+// ordered without depending on the wall clock.
 let seedClock = null
+let stampClock = 0
 function nowMs() {
   if (seedClock !== null) return (seedClock += MINUTE)
-  return Math.floor(Date.now() / SECOND) * SECOND
+  if (currentNow !== null) return (stampClock = Math.max(stampClock + SECOND, currentNow))
+  return clockNow()
 }
 
 // ---------------------------------------------------------------------------
@@ -751,7 +804,7 @@ function compareValues(a, b) {
   return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0
 }
 
-function applySort(items, q, fields) {
+function applySort(items, q, fields, getters = {}) {
   const raw = q.get("sort")
   if (!raw) return items
   const keys = raw
@@ -768,8 +821,9 @@ function applySort(items, q, fields) {
       if (!fields.includes(name) || !["asc", "desc"].includes(dir)) {
         throw invalid({ sort: [`The sort value "${part}" is invalid. Allowed fields: ${fields.join(", ")}.`] })
       }
-      const get =
-        name === "price"
+      const get = getters[name]
+        ? getters[name]
+        : name === "price"
           ? (r) => (r.price === null ? null : Number(r.price))
           : name === "weekday"
             ? (r) => WEEKDAYS.indexOf(r.weekday)
@@ -852,7 +906,7 @@ function buildLocation(body, existing, mode) {
   const pick = merger(existing, patch)
   return stamp(
     {
-      id: existing?.id ?? randomUUID(),
+      id: existing?.id ?? uuid(),
       name: pick(f.name, "name"),
       time_zone: pick(f.time_zone, "time_zone"),
       resource_selection_strategy: pick(f.resource_selection_strategy, "resource_selection_strategy"),
@@ -879,7 +933,7 @@ function buildResource(body, existing, mode) {
   const pick = merger(existing, patch)
   return stamp(
     {
-      id: existing?.id ?? randomUUID(),
+      id: existing?.id ?? uuid(),
       name: pick(f.name, "name"),
       max_simultaneous_bookings: pick(f.max_simultaneous_bookings, "max_simultaneous_bookings", 1),
       metadata: pick(f.metadata, "metadata"),
@@ -949,7 +1003,7 @@ function buildService(body, existing, mode) {
   }
   v.check()
 
-  const rec = { id: existing?.id ?? randomUUID(), type: effectiveType }
+  const rec = { id: existing?.id ?? uuid(), type: effectiveType }
   for (const [k, value] of Object.entries(common)) {
     rec[k] = value !== ABSENT ? value : patch ? existing[k] : SERVICE_DEFAULTS[k]
   }
@@ -989,7 +1043,7 @@ function buildScheduleBlock(body, existing, mode, resource) {
   v.check()
   const pick = merger(existing, patch)
   const rec = {
-    id: existing?.id ?? randomUUID(),
+    id: existing?.id ?? uuid(),
     resource_id: resource.id,
     location_id: pick(f.location_id, "location_id"),
     starts_at: pick(f.starts_at, "starts_at"),
@@ -1024,7 +1078,7 @@ function buildRecurringSchedule(body, existing, mode, resource) {
   v.check()
   const pick = merger(existing, patch)
   const rec = {
-    id: existing?.id ?? randomUUID(),
+    id: existing?.id ?? uuid(),
     resource_id: resource.id,
     location_id: pick(f.location_id, "location_id"),
     start_date: pick(f.start_date, "start_date"),
@@ -1049,7 +1103,7 @@ function buildRecurringScheduleBlock(body, existing, mode, schedule) {
   v.check()
   const pick = merger(existing, patch)
   const rec = {
-    id: existing?.id ?? randomUUID(),
+    id: existing?.id ?? uuid(),
     recurring_schedule_id: schedule.id,
     weekday: pick(f.weekday, "weekday"),
     start_time: pick(f.start_time, "start_time"),
@@ -1147,7 +1201,7 @@ function pickResource(service, location, booking, pending) {
   let candidates = associatedResources(service.id).filter((r) => r.enabled)
   const strategy = location.resource_selection_strategy
   if (strategy === "prioritize") candidates = orderByPriority(candidates, location)
-  else if (strategy === "randomize") candidates = [...candidates].sort(() => Math.random() - 0.5)
+  else if (strategy === "randomize") candidates = [...candidates].sort(() => rand() - 0.5)
   else if (strategy === "equalize") {
     const count = (r) => [...db.bookings.values()].filter((b) => b.resource_id === r.id && !b.is_canceled).length
     candidates = [...candidates].sort((a, b) => count(a) - count(b))
@@ -1173,7 +1227,7 @@ const dayTimeFor = (value, dayNum) => (typeof value === "string" ? value : value
 
 function bookableSlots(service, location, resources, from, to, opts) {
   const tz = location.time_zone
-  const now = Date.now()
+  const now = clockNow()
   const earliest = opts.ignoreWindow ? -Infinity : now + (durationMs(service.booking_window_start) ?? 0)
   const latest =
     opts.ignoreWindow || !service.booking_window_end ? Infinity : now + durationMs(service.booking_window_end)
@@ -1355,7 +1409,7 @@ function buildBooking(body, existing, mode, { prefix = "", inGroup = false, pend
   const pick = merger(existing, patch)
   const now = nowMs()
   const rec = {
-    id: existing?.id ?? randomUUID(),
+    id: existing?.id ?? uuid(),
     resource_id: pick(f.resource_id, "resource_id"),
     service_id: pick(f.service_id, "service_id"),
     location_id: pick(f.location_id, "location_id"),
@@ -1493,7 +1547,7 @@ function createBookingGroup(ctx) {
     throw invalid(errors, Object.keys(messages).length ? { messages } : {})
   }
   const group = stamp({
-    id: randomUUID(),
+    id: uuid(),
     metadata: metadata === ABSENT ? null : metadata,
     protected_metadata: protectedMetadata === ABSENT ? null : protectedMetadata,
   })
@@ -1675,7 +1729,7 @@ function crud(base, ent) {
     let items = [...ent.store().values()]
     if (ent.belongs) items = items.filter((r) => ent.belongs(r, parent))
     items = items.filter(ent.filter(ctx.query, parent))
-    items = applySort(items, ctx.query, ent.sort)
+    items = applySort(items, ctx.query, ent.sort, ent.sortGetters)
     return respond(paginate(ctx, items, ent.ser))
   })
   route("POST", base, (ctx) => {
@@ -1963,15 +2017,37 @@ crud("/bookings", {
 })
 
 // --- Booking groups
+
+/** Earliest/latest instant (ms) of a timestamp field across a group's bookings (null if empty). */
+function groupEdge(group, field, pick) {
+  const times = bookingsOfGroup(group.id).map((b) => b[field])
+  return times.length ? pick(...times) : null
+}
+
 crud("/booking-groups", {
   store: () => db.bookingGroups,
   create: (ctx) => createBookingGroup(ctx),
   update: (ctx, group, mode) => updateBookingGroup(ctx, group, mode),
   ser: serBookingGroup,
   remove: deleteBookingGroup,
-  sort: [...TS, "group_created_at", "group_updated_at"],
+  // Same sort enum as bookings (Hapio API spec). Booking times sort by the group's
+  // earliest start / latest end; created_at and updated_at are the group's own.
+  sort: ["starts_at", "ends_at", "buffer_starts_at", "buffer_ends_at", ...TS],
+  sortGetters: {
+    starts_at: (g) => groupEdge(g, "starts_at", Math.min),
+    ends_at: (g) => groupEdge(g, "ends_at", Math.max),
+    buffer_starts_at: (g) => groupEdge(g, "buffer_starts_at", Math.min),
+    buffer_ends_at: (g) => groupEdge(g, "buffer_ends_at", Math.max),
+  },
   filter: (q) => {
-    const explicit = q.entries.some((e) => BOOKING_FILTER_KEYS.includes(e.base))
+    // Inclusion filters set to "include" match every booking, so they don't count as a
+    // booking filter: groups without bookings stay listed. (Real Hapio's behaviour for
+    // empty groups is undocumented.)
+    const explicit = q.entries.some(
+      (e) =>
+        BOOKING_FILTER_KEYS.includes(e.base) &&
+        !((e.base === "temporary" || e.base === "canceled") && e.value === "include")
+    )
     const matchesBooking = explicit ? bookingPredicate(q) : null
     return all([
       matchesBooking && ((g) => bookingsOfGroup(g.id).some(matchesBooking)),
@@ -1986,10 +2062,12 @@ crud("/booking-groups", {
 
 function seed() {
   db = emptyDb()
-  const realNow = Date.now()
+  rng = currentSeed === null ? null : mulberry32(currentSeed)
+  stampClock = 0
+  const realNow = clockNow()
   seedClock = Math.floor((realNow - 21 * DAY) / SECOND) * SECOND
   try {
-    db.project = stamp({ id: randomUUID(), name: "Demo project", enabled: true })
+    db.project = stamp({ id: uuid(), name: "Demo project", enabled: true })
     if (process.env.MOCK_EMPTY === "1" || seed.empty) return
 
     const put = (map, rec) => (map.set(rec.id, rec), rec)
@@ -2173,7 +2251,7 @@ function seed() {
     // A booking group: two haircuts at the same time.
     const group = put(
       db.bookingGroups,
-      stamp({ id: randomUUID(), metadata: { party: "Lindqvist", note: "Siblings, book together" }, protected_metadata: null })
+      stamp({ id: uuid(), metadata: { party: "Lindqvist", note: "Siblings, book together" }, protected_metadata: null })
     )
     d = businessDay(9)
     for (const [resource, name] of [
@@ -2217,12 +2295,23 @@ async function handle(req) {
   const method = (req.method ?? "GET").toUpperCase()
 
   // Test helpers (no auth, outside /v1).
-  if (pathname === "/__health") return respond({ ok: true })
+  if (pathname === "/__health") {
+    return respond({ ok: true, now: currentNow === null ? null : new Date(currentNow).toISOString(), seed: currentSeed })
+  }
   if (pathname === "/__reset" && method === "POST") {
-    seed.empty = /(^|&)empty=(1|true)(&|$)/.test(rawQuery)
+    const params = new URLSearchParams(rawQuery)
+    try {
+      currentNow = params.has("now") ? parseNow(params.get("now"), "now") : BASE_NOW
+      currentSeed = params.has("seed") ? parseSeed(params.get("seed"), "seed") : BASE_SEED
+    } catch (error) {
+      return respond({ message: error.message }, 400)
+    }
+    seed.empty = /^(1|true)$/.test(params.get("empty") ?? "")
     seed()
     seed.empty = false
-    return { status: 204 }
+    rateWindow = 0
+    rateCount = 0
+    return respond({ now: currentNow === null ? null : new Date(currentNow).toISOString(), seed: currentSeed })
   }
 
   // Rate limit (per minute window).
@@ -2323,7 +2412,7 @@ const server = http.createServer(async (req, res) => {
     })
     res.end(body)
   }
-  console.log(`${new Date().toISOString().slice(11, 19)} ${req.method} ${req.url} ${status} ${Date.now() - started}ms`)
+  if (LOG) console.log(`${new Date().toISOString().slice(11, 19)} ${req.method} ${req.url} ${status} ${Date.now() - started}ms`)
 })
 
 seed()

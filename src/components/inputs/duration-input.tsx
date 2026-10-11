@@ -4,6 +4,7 @@ import { CodeIcon, SlidersHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 import { cn } from "cn"
 
+import { labelIdFor } from "@/components/form/form-field"
 import { Button } from "@/components/ui/button"
 import {
   InputGroup,
@@ -38,6 +39,7 @@ interface DurationInputProps {
 }
 
 const UNIT_LABEL = { days: "d", hours: "h", minutes: "min" } as const
+const UNIT_NAME = { days: "Days", hours: "Hours", minutes: "Minutes" } as const
 
 function needsRaw(parts: DurationParts | null) {
   return !!parts && (parts.years > 0 || parts.months > 0 || parts.weeks > 0 || parts.seconds > 0)
@@ -69,7 +71,7 @@ export function DurationInput({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" role="group" aria-labelledby={id ? labelIdFor(id) : undefined}>
       {nullable && (
         <label className="flex items-center gap-2 text-sm">
           <Switch
@@ -97,7 +99,8 @@ export function DurationInput({
               aria-invalid={invalid || (!!rawText && !isValidDuration(rawText)) || undefined}
               className="font-mono"
               onChange={(e) => {
-                const text = e.target.value.toUpperCase()
+                // Durations never contain whitespace: drop it so a pasted " PT1H " still works.
+                const text = e.target.value.replace(/\s+/g, "").toUpperCase()
                 setRawText(text)
                 onChange(text)
               }}
@@ -114,7 +117,7 @@ export function DurationInput({
                     inputMode="numeric"
                     disabled={disabled}
                     aria-invalid={invalid || undefined}
-                    aria-label={unit}
+                    aria-label={UNIT_NAME[unit]}
                     value={parts ? String(parts[unit] + (unit === "days" ? parts.weeks * 7 : 0)) : "0"}
                     onChange={(e) => setPart(unit, e.target.value)}
                   />

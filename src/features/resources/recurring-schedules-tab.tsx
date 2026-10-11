@@ -5,7 +5,7 @@ import { parseAsString } from "nuqs"
 import { useState } from "react"
 import { cn } from "cn"
 
-import { DataTablePagination } from "@/components/data-table/data-table"
+import { DataTablePagination, useClampToLastPage } from "@/components/data-table/data-table"
 import { ConfirmDialog } from "@/components/entity/confirm-dialog"
 import { ErrorAlert } from "@/components/entity/error-alert"
 import { RowActions } from "@/components/entity/row-actions"
@@ -18,7 +18,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { formatDate } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation } from "@/lib/hapio/hooks"
 import type { RecurringSchedule, Resource } from "@/lib/hapio/types"
@@ -26,6 +25,7 @@ import type { RecurringSchedule, Resource } from "@/lib/hapio/types"
 import { useRecurringSchedules } from "./queries"
 import { RecurringScheduleBlocks } from "./recurring-schedule-blocks"
 import { RecurringScheduleFormDialog } from "./recurring-schedule-form"
+import { dateRange } from "./recurring-schedules-model"
 import { usePrefixedFilters, usePrefixedListState } from "./use-tab-state"
 import { intervalLabel, recurringScheduleStatus, type ScheduleStatus } from "./utils"
 
@@ -48,10 +48,6 @@ const STATUS: Record<ScheduleStatus, { label: string; className?: string; varian
   ended: { label: "Ended", variant: "secondary" },
 }
 
-function dateRange(schedule: RecurringSchedule) {
-  return `${formatDate(schedule.start_date)} → ${schedule.end_date ? formatDate(schedule.end_date) : "Indefinitely"}`
-}
-
 export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
   const list = usePrefixedListState("rs")
   const [filters, setFilters, resetFilters] = usePrefixedFilters("rs", FILTERS)
@@ -71,8 +67,12 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
   const remove = useHapioMutation((id: string) => hapio.recurringSchedules(resource.id).delete(id), {
     success: "Recurring schedule deleted",
   })
+  // Deleting the only schedule on the last page leaves it empty: go back a page.
+  useClampToLastPage(list.pagination, query.data?.meta)
 
   const items = query.data?.data
+  // An empty page of a non-empty list is past the end and about to move back (see above).
+  const awaitingItems = !!query.data && query.data.meta.total > 0 && query.data.data.length === 0
   // A lone schedule starts expanded; otherwise rows open on demand.
   const isOpen = (id: string) => expanded[id] ?? items?.length === 1
   const filtersActive = !!filters.location || !!filters.from || !!filters.to
@@ -91,6 +91,7 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
               size="sm"
               clearable
               placeholder="Any location"
+              aria-label="Location filter"
               value={filters.location}
               onChange={(location) => setFilters({ location })}
             />
@@ -126,7 +127,7 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
         </Button>
       </div>
 
-      {query.isLoading && !items ? (
+      {(query.isLoading && !items) || awaitingItems ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-16 w-full rounded-xl" />
           <Skeleton className="h-16 w-full rounded-xl" />
@@ -190,6 +191,7 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
                     </button>
                   </CollapsibleTrigger>
                   <RowActions
+                    label={`Actions for schedule at ${schedule.location?.name ?? "unknown location"}, ${dateRange(schedule)}`}
                     actions={[
                       { label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ schedule }) },
                       {

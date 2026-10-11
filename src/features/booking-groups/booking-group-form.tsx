@@ -4,17 +4,15 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { ExternalLinkIcon, PlusIcon, Trash2Icon, TriangleAlertIcon, Undo2Icon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useId, useState } from "react"
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react"
 import {
   useFieldArray,
   useForm,
   useWatch,
-  type FieldPath,
   type UseFieldArrayReturn,
   type UseFormReturn,
 } from "react-hook-form"
 import { toast } from "sonner"
-import { z } from "zod"
 
 import { BookingStatusBadge } from "@/components/entity/badges"
 import { ConfirmDialog } from "@/components/entity/confirm-dialog"
@@ -34,259 +32,60 @@ import { FieldError, FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { FormErrorsAlert } from "@/features/bookings/form-errors"
-import {
-  IGNORE_FLAG_DEFAULTS,
-  OverrideRulesSection,
-  activeIgnoreFlags,
-  type IgnoreFlagValues,
-} from "@/features/bookings/override-rules"
+import { OverrideRulesSection, activeIgnoreFlags } from "@/features/bookings/override-rules"
 import { ServiceResourceCombobox } from "@/features/bookings/service-resource-combobox"
 import {
   bookingTimeRange,
   bookingTitle,
   endAfterStartChange,
-  instant,
   rezoneWallTime,
   shortId,
   sortByStart,
 } from "@/features/bookings/utils"
-import { metadataToText } from "@/lib/format/json"
-import { normalizePrice } from "@/lib/format/price"
-import { metadataText, pickDirty, priceText, textToMetadata, textToPrice } from "@/lib/forms"
+import { pickDirty, textToMetadata } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
-import { isHapioError } from "@/lib/hapio/errors"
 import { indexById, useAllLocations, useAllServices, useHapioMutation } from "@/lib/hapio/hooks"
-import type {
-  BookingEmbedded,
-  BookingGroup,
-  BookingGroupPatch,
-  BookingGroupPost,
-  BookingPatchEmbedded,
-  BookingPostEmbedded,
-  Uuid,
-} from "@/lib/hapio/types"
+import type { BookingEmbedded, BookingGroup, BookingGroupPatch, BookingGroupPost } from "@/lib/hapio/types"
 
-// ---------------------------------------------------------------------------
-// Schema
-
-const rowSchema = z
-  .object({
-    /** "" for a booking that doesn't exist yet. */
-    booking_id: z.string(),
-    service_id: z.string(),
-    location_id: z.string(),
-    /** "" = let Hapio pick (new rows) / keep (existing rows). */
-    resource_id: z.string(),
-    starts_at: z.string().min(1, "Required"),
-    ends_at: z.string().min(1, "Required"),
-    /** New rows: "" = calculated by Hapio. Existing rows: "" = no price. */
-    price: priceText(),
-    is_temporary: z.boolean(),
-    is_canceled: z.boolean(),
-  })
-  .superRefine((row, ctx) => {
-    // Existing bookings may have lost their service/location (deleted); only new ones need them.
-    if (!row.booking_id && !row.service_id) {
-      ctx.addIssue({ code: "custom", path: ["service_id"], message: "Select a service" })
-    }
-    if (!row.booking_id && !row.location_id) {
-      ctx.addIssue({ code: "custom", path: ["location_id"], message: "Select a location" })
-    }
-    if (row.starts_at && row.ends_at && instant(row.ends_at) <= instant(row.starts_at)) {
-      ctx.addIssue({ code: "custom", path: ["ends_at"], message: "Must be after the start" })
-    }
-  })
-
-const schema = z.object({
-  metadata: metadataText(),
-  protected_metadata: metadataText(),
-  bookings: z.array(rowSchema).min(1, "Add at least one booking."),
-  ignore_schedule: z.boolean(),
-  ignore_fully_booked: z.boolean(),
-  ignore_bookable_slots: z.boolean(),
-  ignore_booking_window: z.boolean(),
-  ignore_cancelation_threshold: z.boolean(),
-})
-
-type Values = z.infer<typeof schema>
-type RowValues = Values["bookings"][number]
-type Mode = "create" | "edit"
-
-/** Row fields that have an input, i.e. where a server error can be shown in place. */
-const ROW_INPUTS = ["service_id", "location_id", "resource_id", "starts_at", "ends_at", "price", "is_temporary", "is_canceled"]
-
-function emptyRow(from?: RowValues): RowValues {
-  return {
-    booking_id: "",
-    service_id: from?.service_id ?? "",
-    location_id: from?.location_id ?? "",
-    resource_id: from?.resource_id ?? "",
-    starts_at: "",
-    ends_at: "",
-    price: "",
-    is_temporary: from?.is_temporary ?? false,
-    is_canceled: false,
-  }
-}
-
-function bookingToRow(booking: BookingEmbedded): RowValues {
-  return {
-    booking_id: booking.id,
-    service_id: booking.service?.id ?? "",
-    location_id: booking.location?.id ?? "",
-    resource_id: booking.resource?.id ?? "",
-    starts_at: booking.starts_at,
-    ends_at: booking.ends_at,
-    price: booking.price ?? "",
-    is_temporary: booking.is_temporary,
-    is_canceled: booking.is_canceled,
-  }
-}
-
-function groupToValues(group: BookingGroup | undefined, bookings: BookingEmbedded[]): Values {
-  return {
-    metadata: metadataToText(group?.metadata),
-    protected_metadata: metadataToText(group?.protected_metadata),
-    bookings: group ? bookings.map(bookingToRow) : [emptyRow()],
-    ...IGNORE_FLAG_DEFAULTS,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Request bodies
-
-/** A booking to create; valid both in a POST and (without `id`) in a PATCH. */
-type NewBookingItem = Omit<BookingPostEmbedded, "resource_id"> & { resource_id?: Uuid }
-
-function rowToNew(row: RowValues, flags: Partial<IgnoreFlagValues>): NewBookingItem {
-  const item: NewBookingItem = {
-    service_id: row.service_id,
-    location_id: row.location_id,
-    starts_at: row.starts_at,
-    ends_at: row.ends_at,
-    ...flags,
-  }
-  if (row.resource_id) item.resource_id = row.resource_id
-  if (row.price.trim()) item.price = textToPrice(row.price)
-  if (row.is_temporary) item.is_temporary = true
-  return item
-}
-
-/** Fields of an existing booking that differ from what the server returned. */
-function rowChanges(row: RowValues, before: RowValues): BookingPatchEmbedded {
-  const out: BookingPatchEmbedded = {}
-  if (row.service_id && row.service_id !== before.service_id) out.service_id = row.service_id
-  if (row.location_id && row.location_id !== before.location_id) out.location_id = row.location_id
-  if (row.resource_id && row.resource_id !== before.resource_id) out.resource_id = row.resource_id
-  if (instant(row.starts_at) !== instant(before.starts_at)) out.starts_at = row.starts_at
-  if (instant(row.ends_at) !== instant(before.ends_at)) out.ends_at = row.ends_at
-  if ((normalizePrice(row.price) ?? null) !== (normalizePrice(before.price) ?? null)) out.price = textToPrice(row.price)
-  if (row.is_temporary !== before.is_temporary) out.is_temporary = row.is_temporary
-  if (row.is_canceled !== before.is_canceled) out.is_canceled = row.is_canceled
-  return out
-}
-
-interface PatchPlan {
-  body: BookingGroupPatch | null
-  /** Existing bookings that the PATCH will delete. */
-  removed: BookingEmbedded[]
-}
-
-/**
- * PATCH semantics: when `bookings` is sent, every existing booking missing
- * from it is deleted. So either omit it (untouched) or send every row that
- * should remain: unchanged ones as `{ id }`, changed ones as `{ id, …changes }`
- * and new ones without an id.
- */
-function planPatch(values: Values, original: BookingEmbedded[], dirty: Partial<Values>): PatchPlan {
-  const before = new Map(original.map((b) => [b.id, bookingToRow(b)]))
-  const flags = activeIgnoreFlags(values)
-  let touched = false
-
-  const items: NonNullable<BookingGroupPatch["bookings"]> = values.bookings.map((row) => {
-    if (!row.booking_id) {
-      touched = true
-      return rowToNew(row, flags)
-    }
-    const previous = before.get(row.booking_id)
-    const changes = previous ? rowChanges(row, previous) : {}
-    if (!Object.keys(changes).length) return { id: row.booking_id }
-    touched = true
-    return {
-      id: row.booking_id,
-      ...changes,
-      ...flags,
-      ...(changes.is_canceled && values.ignore_cancelation_threshold ? { ignore_cancelation_threshold: true } : {}),
-    }
-  })
-
-  const kept = new Set(values.bookings.map((row) => row.booking_id))
-  const removed = original.filter((b) => !kept.has(b.id))
-  if (removed.length) touched = true
-
-  const body: BookingGroupPatch = {}
-  if (touched) body.bookings = items
-  if (dirty.metadata !== undefined) body.metadata = textToMetadata(values.metadata)
-  if (dirty.protected_metadata !== undefined) body.protected_metadata = textToMetadata(values.protected_metadata)
-  return { body: Object.keys(body).length ? body : null, removed }
-}
+import {
+  bookingToRow,
+  editEmptyGroupSchema,
+  emptyRow,
+  groupToValues,
+  mapGroupErrors,
+  planPatch,
+  rowChanges,
+  rowToNew,
+  schema,
+  toastUnlessShownInline,
+  type Mode,
+  type GroupErrors,
+  type PatchPlan,
+  type RowErrors,
+  type RowValues,
+  type Values,
+} from "./booking-group-form-model"
 
 // ---------------------------------------------------------------------------
 // Errors
 
-type RowErrors = Record<number, string[]>
+type ServerErrors = Omit<GroupErrors, "fieldErrors">
 
-/**
- * Group 422s come as `errors: {"bookings.0.starts_at": [...]}` and/or
- * `messages: {"bookings.0": "…"}`. Indexes refer to the array we sent, which
- * mirrors the form's rows one to one.
- */
-function applyGroupErrors(error: unknown, form: UseFormReturn<Values>): { formErrors: string[]; rowErrors: RowErrors } {
-  const formErrors: string[] = []
-  const rowErrors: RowErrors = {}
-  if (!isHapioError(error)) return { formErrors, rowErrors }
-  const failedRows = new Set<number>()
-  const pushRow = (index: number, message: string) => {
-    failedRows.add(index)
-    rowErrors[index] = [...(rowErrors[index] ?? []), message]
-  }
+const NO_SERVER_ERRORS: ServerErrors = { formErrors: [], rowSummary: null, rowErrors: {} }
 
-  for (const [key, messages] of Object.entries(error.errors ?? {})) {
-    const message = messages.join(" ")
-    const m = /^bookings\.(\d+)(?:\.(.+))?$/.exec(key)
-    if (m) {
-      const index = Number(m[1])
-      const field = m[2]
-      if (field && ROW_INPUTS.includes(field)) {
-        failedRows.add(index)
-        form.setError(`bookings.${index}.${field}` as FieldPath<Values>, { type: "server", message })
-      } else {
-        pushRow(index, field ? `${field}: ${message}` : message)
-      }
-    } else if (key === "metadata" || key === "protected_metadata") {
-      form.setError(key, { type: "server", message })
-    } else {
-      formErrors.push(key === "bookings" ? message : `${key}: ${message}`)
-    }
-  }
-  for (const [key, message] of Object.entries(error.messages ?? {})) {
-    const m = /^bookings\.(\d+)/.exec(key)
-    if (m) pushRow(Number(m[1]), message)
-    else formErrors.push(message)
-  }
-  if (failedRows.size) {
-    const rows = [...failedRows].sort((a, b) => a - b).map((i) => i + 1)
-    formErrors.unshift(`Hapio rejected booking ${rows.join(", ")}. See the details on ${rows.length === 1 ? "that row" : "those rows"}.`)
-  }
-  return { formErrors, rowErrors }
+/** Puts a group 422 on the form: field errors via setError, the rest is returned for the alerts. */
+function applyGroupErrors(error: unknown, form: UseFormReturn<Values>): ServerErrors {
+  const { fieldErrors, ...rest } = mapGroupErrors(error)
+  for (const [path, message] of fieldErrors) form.setError(path, { type: "server", message })
+  return rest
 }
 
-const toastUnlessShownInline = (error: unknown) =>
-  !(
-    isHapioError(error) &&
-    error.status === 422 &&
-    (Object.keys(error.errors ?? {}).length > 0 || Object.keys(error.messages ?? {}).length > 0)
-  )
+/** Row indexes shift on add/remove, so the index-based row alerts and summary go stale. */
+const withoutRowErrors = (errors: ServerErrors): ServerErrors => ({ ...errors, rowSummary: null, rowErrors: {} })
+
+/** Messages for the form-level alert: the "rejected booking N" summary first. */
+const formAlertMessages = ({ rowSummary, formErrors }: ServerErrors) =>
+  rowSummary ? [rowSummary, ...formErrors] : formErrors
 
 // ---------------------------------------------------------------------------
 // Rows
@@ -569,7 +368,7 @@ function BookingGroupFields({
   mode: Mode
   original: BookingEmbedded[]
   rowErrors: RowErrors
-  /** Row indexes shift on add/remove, so index-based server errors go stale. */
+  /** Called after a row is added or removed. */
   onRowsChanged: () => void
 }) {
   const { control } = form
@@ -600,7 +399,8 @@ function BookingGroupFields({
                 index={index}
                 original={bookingId ? originalById.get(bookingId) : undefined}
                 errors={rowErrors[index]}
-                canRemove={rows.fields.length > 1}
+                // A group needs a booking, but an empty one may stay empty (the list isn't sent).
+                canRemove={rows.fields.length > 1 || (mode === "edit" && !original.length)}
                 onRemove={() => {
                   rows.remove(index)
                   onRowsChanged()
@@ -668,33 +468,47 @@ function BookingGroupFields({
 // Create (full page)
 
 export function BookingGroupCreateForm() {
+  // Next keeps this page mounted (hidden) after navigating to the new group. If it's shown
+  // again (Back), start a fresh form rather than the sent one with its submit stuck disabled.
+  // A draft that wasn't sent is kept.
+  const [generation, setGeneration] = useState(0)
+  const restart = useCallback(() => setGeneration((g) => g + 1), [])
+  return <CreateForm key={generation} onHiddenAfterCreate={restart} />
+}
+
+function CreateForm({ onHiddenAfterCreate }: { onHiddenAfterCreate: () => void }) {
   const router = useRouter()
-  const [formErrors, setFormErrors] = useState<string[]>([])
-  const [rowErrors, setRowErrors] = useState<RowErrors>({})
+  const [serverErrors, setServerErrors] = useState<ServerErrors>(NO_SERVER_ERRORS)
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: groupToValues(undefined, []),
   })
   const rows = useFieldArray({ control: form.control, name: "bookings" })
+  const created = useRef(false)
 
   const mutation = useHapioMutation((body: BookingGroupPost) => hapio.bookingGroups.create(body), {
     success: "Booking group created",
     toastErrors: toastUnlessShownInline,
-    onSuccess: (saved) => router.push(`/booking-groups/${saved.id}`),
-    onError: (error) => {
-      const result = applyGroupErrors(error, form)
-      setFormErrors(result.formErrors)
-      setRowErrors(result.rowErrors)
+    onSuccess: (saved) => {
+      created.current = true
+      router.push(`/booking-groups/${saved.id}`)
     },
+    onError: (error) => setServerErrors(applyGroupErrors(error, form)),
   })
+  // The cleanup runs when Next hides the page after the navigation (or it unmounts).
+  useLayoutEffect(
+    () => () => {
+      if (created.current) onHiddenAfterCreate()
+    },
+    [onHiddenAfterCreate]
+  )
 
   return (
     <form
       noValidate
       className="w-full max-w-5xl"
       onSubmit={form.handleSubmit((values) => {
-        setFormErrors([])
-        setRowErrors({})
+        setServerErrors(NO_SERVER_ERRORS)
         const flags = activeIgnoreFlags(values)
         const body: BookingGroupPost = { bookings: values.bookings.map((row) => rowToNew(row, flags)) }
         const metadata = textToMetadata(values.metadata)
@@ -712,18 +526,18 @@ export function BookingGroupCreateForm() {
               rows={rows}
               mode="create"
               original={[]}
-              rowErrors={rowErrors}
-              onRowsChanged={() => setRowErrors({})}
+              rowErrors={serverErrors.rowErrors}
+              onRowsChanged={() => setServerErrors(withoutRowErrors)}
             />
-            <FormErrorsAlert errors={formErrors} />
+            <FormErrorsAlert errors={formAlertMessages(serverErrors)} />
           </FieldGroup>
         </CardContent>
         <CardFooter className="justify-end gap-2">
           <Button variant="outline" asChild>
             <Link href="/booking-groups">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={mutation.isPending || mutation.isSuccess}>
-            {(mutation.isPending || mutation.isSuccess) && <Spinner />}
+          <Button type="submit" disabled={mutation.isPending || mutation.isSuccess} aria-busy={mutation.isPending}>
+            {(mutation.isPending || mutation.isSuccess) && <Spinner aria-hidden />}
             Create booking group
           </Button>
         </CardFooter>
@@ -745,11 +559,10 @@ export function BookingGroupEditDialog({
 }) {
   // The diff (what changed, what gets deleted) is against this snapshot.
   const [original] = useState(() => sortByStart(group.bookings))
-  const [formErrors, setFormErrors] = useState<string[]>([])
-  const [rowErrors, setRowErrors] = useState<RowErrors>({})
+  const [serverErrors, setServerErrors] = useState<ServerErrors>(NO_SERVER_ERRORS)
   const [pending, setPending] = useState<PatchPlan | null>(null)
   const form = useForm<Values>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(original.length ? schema : editEmptyGroupSchema),
     defaultValues: groupToValues(group, original),
   })
   const rows = useFieldArray({ control: form.control, name: "bookings" })
@@ -761,11 +574,7 @@ export function BookingGroupEditDialog({
     success: "Booking group updated",
     toastErrors: toastUnlessShownInline,
     onSuccess: () => onOpenChange(false),
-    onError: (error) => {
-      const result = applyGroupErrors(error, form)
-      setFormErrors(result.formErrors)
-      setRowErrors(result.rowErrors)
-    },
+    onError: (error) => setServerErrors(applyGroupErrors(error, form)),
   })
 
   const removedCount = pending?.removed.length ?? 0
@@ -779,11 +588,10 @@ export function BookingGroupEditDialog({
         description="Edit, add or remove bookings, and change the group's metadata."
         submitLabel="Save changes"
         pending={mutation.isPending}
-        formErrors={formErrors}
+        formErrors={formAlertMessages(serverErrors)}
         size="xl"
         onSubmit={form.handleSubmit((values) => {
-          setFormErrors([])
-          setRowErrors({})
+          setServerErrors(NO_SERVER_ERRORS)
           const plan = planPatch(values, original, pickDirty(values, dirtyFields))
           if (!plan.body) {
             toast.info("No changes to save")
@@ -799,8 +607,8 @@ export function BookingGroupEditDialog({
           rows={rows}
           mode="edit"
           original={original}
-          rowErrors={rowErrors}
-          onRowsChanged={() => setRowErrors({})}
+          rowErrors={serverErrors.rowErrors}
+          onRowsChanged={() => setServerErrors(withoutRowErrors)}
         />
       </FormDialog>
       <ConfirmDialog

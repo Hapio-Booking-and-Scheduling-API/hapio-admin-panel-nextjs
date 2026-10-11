@@ -3,10 +3,9 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useForm, useWatch, type UseFormReturn } from "react-hook-form"
 import { toast } from "sonner"
-import { z } from "zod"
 
 import { FormDialog } from "@/components/form/form-dialog"
 import { FormField } from "@/components/form/form-field"
@@ -21,184 +20,32 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { humanizeDuration, isZeroDuration } from "@/lib/format/duration"
-import { metadataToText } from "@/lib/format/json"
 import { formatPrice } from "@/lib/format/price"
-import { metadataText, pickDirty, priceText, textToMetadata, textToPrice } from "@/lib/forms"
+import { pickDirty } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
 import { applyValidationErrors } from "@/lib/hapio/errors"
 import { indexById, toastUnlessFieldErrors, useAllLocations, useAllServices, useHapioMutation } from "@/lib/hapio/hooks"
-import type { Booking, BookingPatch, BookingPost, Service } from "@/lib/hapio/types"
+import type { Booking, BookingPatch, BookingPost } from "@/lib/hapio/types"
 
+import {
+  FIELDS,
+  bookingToValues,
+  emptyValues,
+  schema,
+  serviceBuffers,
+  toPatchBody,
+  toPostBody,
+  type BookingFormDefaults,
+  type Mode,
+  type Values,
+} from "./booking-form-model"
 import { FormErrorsAlert } from "./form-errors"
 import { BookingGroupIdInput } from "./group-id-input"
-import {
-  CollapsibleSection,
-  IGNORE_FLAG_DEFAULTS,
-  OverrideRulesSection,
-  activeIgnoreFlags,
-} from "./override-rules"
+import { CollapsibleSection, OverrideRulesSection } from "./override-rules"
 import { ServiceResourceCombobox } from "./service-resource-combobox"
-import {
-  UUID_RE,
-  endAfterStartChange,
-  formatMinutes,
-  instant,
-  minutesBetween,
-  rezoneWallTime,
-} from "./utils"
+import { endAfterStartChange, formatMinutes, minutesBetween, rezoneWallTime } from "./utils"
 
-const schema = z
-  .object({
-    service_id: z.string().min(1, "Select a service"),
-    location_id: z.string().min(1, "Select a location"),
-    /** "" = let Hapio pick (create only). */
-    resource_id: z.string(),
-    starts_at: z.string().min(1, "Required"),
-    ends_at: z.string().min(1, "Required"),
-    /** On: leave the price to Hapio (omit it from the request). */
-    auto_price: z.boolean(),
-    price: priceText(),
-    is_temporary: z.boolean(),
-    is_canceled: z.boolean(),
-    booking_group_id: z
-      .string()
-      .trim()
-      .refine((v) => v === "" || UUID_RE.test(v), "Not a valid booking group ID"),
-    metadata: metadataText(),
-    protected_metadata: metadataText(),
-    ignore_schedule: z.boolean(),
-    ignore_fully_booked: z.boolean(),
-    ignore_bookable_slots: z.boolean(),
-    ignore_booking_window: z.boolean(),
-    ignore_cancelation_threshold: z.boolean(),
-    custom_buffers: z.boolean(),
-    buffer_starts_at: z.string(),
-    buffer_ends_at: z.string(),
-  })
-  .superRefine((v, ctx) => {
-    if (v.starts_at && v.ends_at && instant(v.ends_at) <= instant(v.starts_at)) {
-      ctx.addIssue({ code: "custom", path: ["ends_at"], message: "Must be after the start" })
-    }
-    if (!v.custom_buffers) return
-    if (!v.buffer_starts_at) {
-      ctx.addIssue({ code: "custom", path: ["buffer_starts_at"], message: "Required" })
-    } else if (v.starts_at && instant(v.buffer_starts_at) > instant(v.starts_at)) {
-      ctx.addIssue({ code: "custom", path: ["buffer_starts_at"], message: "Must be at or before the start" })
-    }
-    if (!v.buffer_ends_at) {
-      ctx.addIssue({ code: "custom", path: ["buffer_ends_at"], message: "Required" })
-    } else if (v.ends_at && instant(v.buffer_ends_at) < instant(v.ends_at)) {
-      ctx.addIssue({ code: "custom", path: ["buffer_ends_at"], message: "Must be at or after the end" })
-    }
-    if (!v.ignore_bookable_slots && !v.ignore_schedule) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["custom_buffers"],
-        message: "Custom buffers need “Ignore bookable slots” (under Override rules).",
-      })
-    }
-  })
-
-type Values = z.infer<typeof schema>
-type Mode = "create" | "edit"
-const FIELDS = Object.keys(schema.shape)
-
-/** Prefill for a new booking (e.g. from URL search params). */
-export type BookingFormDefaults = Partial<
-  Pick<Values, "service_id" | "location_id" | "resource_id" | "starts_at" | "ends_at" | "is_temporary" | "booking_group_id">
->
-
-function emptyValues(defaults: BookingFormDefaults = {}): Values {
-  return {
-    service_id: "",
-    location_id: "",
-    resource_id: "",
-    starts_at: "",
-    ends_at: "",
-    auto_price: true,
-    price: "",
-    is_temporary: false,
-    is_canceled: false,
-    booking_group_id: "",
-    metadata: "",
-    protected_metadata: "",
-    ...IGNORE_FLAG_DEFAULTS,
-    custom_buffers: false,
-    buffer_starts_at: "",
-    buffer_ends_at: "",
-    ...defaults,
-  }
-}
-
-function bookingToValues(booking: Booking): Values {
-  return {
-    service_id: booking.service?.id ?? "",
-    location_id: booking.location?.id ?? "",
-    resource_id: booking.resource?.id ?? "",
-    starts_at: booking.starts_at,
-    ends_at: booking.ends_at,
-    auto_price: true,
-    price: booking.price ?? "",
-    is_temporary: booking.is_temporary,
-    is_canceled: booking.is_canceled,
-    booking_group_id: booking.booking_group?.id ?? "",
-    metadata: metadataToText(booking.metadata),
-    protected_metadata: metadataToText(booking.protected_metadata),
-    ...IGNORE_FLAG_DEFAULTS,
-    custom_buffers: false,
-    buffer_starts_at: booking.buffer_starts_at,
-    buffer_ends_at: booking.buffer_ends_at,
-  }
-}
-
-function toPostBody(v: Values): BookingPost {
-  const body: BookingPost = {
-    service_id: v.service_id,
-    location_id: v.location_id,
-    starts_at: v.starts_at,
-    ends_at: v.ends_at,
-    ...activeIgnoreFlags(v),
-  }
-  if (v.resource_id) body.resource_id = v.resource_id
-  if (v.booking_group_id) body.booking_group_id = v.booking_group_id
-  // Sending price (even null) overrides Hapio's calculation.
-  if (!v.auto_price) body.price = textToPrice(v.price)
-  if (v.is_temporary) body.is_temporary = true
-  const metadata = textToMetadata(v.metadata)
-  if (metadata) body.metadata = metadata
-  const protectedMetadata = textToMetadata(v.protected_metadata)
-  if (protectedMetadata) body.protected_metadata = protectedMetadata
-  if (v.custom_buffers) {
-    body.buffer_starts_at = v.buffer_starts_at
-    body.buffer_ends_at = v.buffer_ends_at
-  }
-  return body
-}
-
-/** PATCH body with only what changed. Returns null when nothing did. */
-function toPatchBody(values: Values, dirty: Partial<Values>): BookingPatch | null {
-  const body: BookingPatch = {}
-  if (dirty.service_id !== undefined) body.service_id = values.service_id
-  if (dirty.location_id !== undefined) body.location_id = values.location_id
-  if (dirty.resource_id !== undefined && values.resource_id) body.resource_id = values.resource_id
-  if (dirty.starts_at !== undefined) body.starts_at = values.starts_at
-  if (dirty.ends_at !== undefined) body.ends_at = values.ends_at
-  if ((dirty.auto_price !== undefined || dirty.price !== undefined) && !values.auto_price) {
-    body.price = textToPrice(values.price)
-  }
-  if (dirty.is_temporary !== undefined) body.is_temporary = values.is_temporary
-  if (dirty.is_canceled !== undefined) body.is_canceled = values.is_canceled
-  if (dirty.booking_group_id !== undefined) body.booking_group_id = values.booking_group_id || null
-  if (dirty.metadata !== undefined) body.metadata = textToMetadata(values.metadata)
-  if (dirty.protected_metadata !== undefined) body.protected_metadata = textToMetadata(values.protected_metadata)
-  if (values.custom_buffers) {
-    body.buffer_starts_at = values.buffer_starts_at
-    body.buffer_ends_at = values.buffer_ends_at
-  }
-  if (!Object.keys(body).length) return null
-  return { ...body, ...activeIgnoreFlags(values, { cancelation: values.is_canceled }) }
-}
+export type { BookingFormDefaults } from "./booking-form-model"
 
 // ---------------------------------------------------------------------------
 // Fields
@@ -524,15 +371,39 @@ function BookingFields({
   )
 }
 
-function serviceBuffers(service: Service) {
-  const before = service.buffer_time_before
-  const after = service.buffer_time_after
-  if (isZeroDuration(before) && isZeroDuration(after)) return "none"
-  return `${humanizeDuration(before)} before, ${humanizeDuration(after)} after`
-}
-
 // ---------------------------------------------------------------------------
 // Create (full page)
+
+/**
+ * A prefilled start without an end (e.g. `/bookings/new?service=…&starts_at=…`) gets the
+ * service's length, like picking the start by hand does. Runs once, when the service (and
+ * the location's time zone) are known.
+ */
+function usePrefilledEnd(form: UseFormReturn<Values>, defaults: BookingFormDefaults | undefined) {
+  const services = useAllServices()
+  const locations = useAllLocations()
+  const done = useRef(false)
+
+  useEffect(() => {
+    if (done.current) return
+    const { service_id, location_id, starts_at, ends_at } = defaults ?? {}
+    if (!service_id || !starts_at || ends_at) {
+      done.current = true
+      return
+    }
+    if (!services.data || (location_id && !locations.data)) return
+    done.current = true
+    if (form.getValues("ends_at")) return
+    const end = endAfterStartChange({
+      previousStart: "",
+      nextStart: form.getValues("starts_at"),
+      end: "",
+      service: indexById(services.data).get(form.getValues("service_id")),
+      timeZone: indexById(locations.data).get(form.getValues("location_id"))?.time_zone,
+    })
+    if (end) form.setValue("ends_at", end, { shouldDirty: true })
+  }, [defaults, form, services.data, locations.data])
+}
 
 /** The `/bookings/new` form. `defaults` prefill it (e.g. from a bookable slot). */
 export function BookingCreateForm({ defaults }: { defaults?: BookingFormDefaults }) {
@@ -542,6 +413,7 @@ export function BookingCreateForm({ defaults }: { defaults?: BookingFormDefaults
     resolver: zodResolver(schema),
     defaultValues: emptyValues(defaults),
   })
+  usePrefilledEnd(form, defaults)
 
   const mutation = useHapioMutation((body: BookingPost) => hapio.bookings.create(body), {
     success: "Booking created",
@@ -570,8 +442,8 @@ export function BookingCreateForm({ defaults }: { defaults?: BookingFormDefaults
           <Button variant="outline" asChild>
             <Link href="/bookings">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={mutation.isPending || mutation.isSuccess}>
-            {(mutation.isPending || mutation.isSuccess) && <Spinner />}
+          <Button type="submit" disabled={mutation.isPending || mutation.isSuccess} aria-busy={mutation.isPending}>
+            {(mutation.isPending || mutation.isSuccess) && <Spinner aria-hidden />}
             Create booking
           </Button>
         </CardFooter>
@@ -596,7 +468,8 @@ export function BookingEditDialog({
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     values: bookingToValues(booking),
-    resetOptions: { keepDirtyValues: false },
+    // A background refetch updates the untouched fields and keeps the user's edits.
+    resetOptions: { keepDirtyValues: true },
   })
 
   // Read during render so react-hook-form tracks dirty state.
@@ -614,7 +487,8 @@ export function BookingEditDialog({
       open={open}
       onOpenChange={(next) => {
         if (!next) {
-          form.reset(bookingToValues(booking))
+          // Discard the edits (reset() would otherwise apply resetOptions and keep them).
+          form.reset(bookingToValues(booking), { keepDirtyValues: false })
           setFormErrors([])
         }
         onOpenChange(next)

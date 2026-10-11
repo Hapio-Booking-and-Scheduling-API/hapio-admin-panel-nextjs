@@ -27,6 +27,13 @@ interface FormFieldProps<T extends FieldValues, N extends FieldPath<T>> {
   }) => React.ReactElement
 }
 
+/**
+ * Id of the visible label for a control with id `id`. Controls that aren't a single
+ * labelable element (radio groups, toggle groups, composite inputs) use it with
+ * aria-labelledby.
+ */
+export const labelIdFor = (id: string) => `${id}-label`
+
 /** react-hook-form Controller wired to shadcn's Field components. */
 export function FormField<T extends FieldValues, N extends FieldPath<T>>({
   control,
@@ -49,7 +56,11 @@ export function FormField<T extends FieldValues, N extends FieldPath<T>>({
             <Field orientation="horizontal" data-invalid={fieldState.invalid} className={className}>
               {control}
               <FieldContent>
-                {label && <FieldLabel htmlFor={id}>{label}</FieldLabel>}
+                {label && (
+                  <FieldLabel htmlFor={id} id={labelIdFor(id)}>
+                    {label}
+                  </FieldLabel>
+                )}
                 {description && <FieldDescription>{description}</FieldDescription>}
                 <FieldError errors={[fieldState.error]} />
               </FieldContent>
@@ -58,7 +69,11 @@ export function FormField<T extends FieldValues, N extends FieldPath<T>>({
         }
         return (
           <Field data-invalid={fieldState.invalid} className={className}>
-            {label && <FieldLabel htmlFor={id}>{label}</FieldLabel>}
+            {label && (
+              <FieldLabel htmlFor={id} id={labelIdFor(id)}>
+                {label}
+              </FieldLabel>
+            )}
             {control}
             {description && <FieldDescription>{description}</FieldDescription>}
             <FieldError errors={[fieldState.error]} />

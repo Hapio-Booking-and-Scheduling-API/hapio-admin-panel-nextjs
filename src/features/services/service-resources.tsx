@@ -107,10 +107,11 @@ export function ServiceResourcesTab({
               onChange={setSelected}
               exclude={associatedIds}
               placeholder="Select a resource to associate…"
+              aria-label="Resource to associate"
             />
           </div>
-          <Button type="submit" disabled={!selected || associate.isPending}>
-            {associate.isPending ? <Spinner /> : <Link2Icon />} Associate resource
+          <Button type="submit" disabled={!selected || associate.isPending} aria-busy={associate.isPending}>
+            {associate.isPending ? <Spinner aria-hidden /> : <Link2Icon />} Associate resource
           </Button>
         </form>
         <DataTable

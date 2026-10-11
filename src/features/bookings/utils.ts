@@ -3,8 +3,11 @@
 import { TZDate } from "@date-fns/tz"
 import { add, format, isSameDay, isValid } from "date-fns"
 
-import type { FilterFieldDef } from "@/components/filters/advanced-filters"
-import { METADATA_FILTER_FIELDS, TIMESTAMP_FILTER_FIELDS } from "@/components/filters/advanced-filters"
+import {
+  METADATA_FILTER_FIELDS,
+  TIMESTAMP_FILTER_FIELDS,
+  type FilterFieldDef,
+} from "@/components/filters/advanced-filters-model"
 import { browserTimeZone, formatDateTime, toHapioDateTime, toWallTime, wallDate } from "@/lib/format/datetime"
 import { parseDuration } from "@/lib/format/duration"
 import type {
@@ -80,12 +83,30 @@ export function formatMinutes(total: number): string {
   return parts.length ? sign + parts.join(" ") : "0 min"
 }
 
+/**
+ * The ends of a span carry different UTC offsets: a group spanning time zones, or a
+ * booking across a DST change. Each end is then shown in its own wall time with its offset.
+ */
+const mixedOffsets = (span: { starts_at: string; ends_at: string }) =>
+  offsetLabel(span.starts_at) !== offsetLabel(span.ends_at)
+
+const withOffset = (text: string, iso: string) => (offsetLabel(iso) ? `${text} (${offsetLabel(iso)})` : text)
+
 /** Date and time span of a booking in its own (location) wall time. */
 export function bookingWhen(booking: { starts_at: string; ends_at: string }) {
   const start = wallDate(booking.starts_at)
   const end = wallDate(booking.ends_at)
   if (!isValid(start) || !isValid(end)) return { date: booking.starts_at, time: "" }
   const sameDay = isSameDay(start, end)
+  if (mixedOffsets(booking)) {
+    return {
+      date: format(start, "EEE d MMM yyyy"),
+      time: `${withOffset(format(start, "HH:mm"), booking.starts_at)} → ${withOffset(
+        format(end, sameDay ? "HH:mm" : "d MMM, HH:mm"),
+        booking.ends_at
+      )}`,
+    }
+  }
   return {
     date: format(start, "EEE d MMM yyyy"),
     time: sameDay
@@ -94,12 +115,22 @@ export function bookingWhen(booking: { starts_at: string; ends_at: string }) {
   }
 }
 
-/** "Mon 12 Oct 2026, 10:00–11:30" or "12 Oct 2026, 10:00 → 14 Oct 2026, 11:00". */
+/**
+ * "Mon 12 Oct 2026, 10:00–11:30" or "12 Oct 2026, 10:00 → 14 Oct 2026, 11:00"; with
+ * offsets when the ends have different ones, e.g. "Tue 3 Nov 2026, 10:00 (UTC+01:00) →
+ * 08:45 (UTC-05:00)".
+ */
 export function bookingTimeRange(booking: { starts_at: string; ends_at: string }): string {
   const start = wallDate(booking.starts_at)
   const end = wallDate(booking.ends_at)
   if (!isValid(start) || !isValid(end)) return `${booking.starts_at} → ${booking.ends_at}`
-  if (isSameDay(start, end)) return `${format(start, "EEE d MMM yyyy, HH:mm")}–${format(end, "HH:mm")}`
+  const sameDay = isSameDay(start, end)
+  if (mixedOffsets(booking)) {
+    const from = sameDay ? format(start, "EEE d MMM yyyy, HH:mm") : formatDateTime(booking.starts_at)
+    const to = sameDay ? format(end, "HH:mm") : formatDateTime(booking.ends_at)
+    return `${withOffset(from, booking.starts_at)} → ${withOffset(to, booking.ends_at)}`
+  }
+  if (sameDay) return `${format(start, "EEE d MMM yyyy, HH:mm")}–${format(end, "HH:mm")}`
   return `${formatDateTime(booking.starts_at)} → ${formatDateTime(booking.ends_at)}`
 }
 
@@ -107,7 +138,11 @@ export function bookingTitle(booking: Pick<BookingEmbedded, "service">): string 
   return booking.service?.name ?? "Booking"
 }
 
-/** Earliest start and latest end across bookings (by instant). */
+/**
+ * Earliest start and latest end across bookings (by instant). Each end keeps its own
+ * booking's timestamp (and so its wall time and offset); `bookingTimeRange` and
+ * `bookingWhen` label the offsets when they differ.
+ */
 export function groupSpan(bookings: BookingEmbedded[]): { starts_at: string; ends_at: string } | null {
   if (!bookings.length) return null
   let first = bookings[0]

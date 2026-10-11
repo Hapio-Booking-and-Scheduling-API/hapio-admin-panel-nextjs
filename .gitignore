@@ -36,6 +36,12 @@ next-env.d.ts
 # --- Testing -----------------------------------------------------------------
 # Vitest coverage reports (`vitest run --coverage`)
 /coverage
+# Playwright: end-to-end build, reports and traces
+/.next-e2e*/
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
 
 # --- Logs ----------------------------------------------------------------------
 # Includes output redirected from `npm run dev` or `npm run mock`

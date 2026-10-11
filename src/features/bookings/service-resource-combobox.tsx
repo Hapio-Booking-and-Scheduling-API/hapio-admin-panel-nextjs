@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+
 import { useState } from "react"
 
 import { EntityCombobox } from "@/components/inputs/entity-combobox"
@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button"
 import { hapio } from "@/lib/hapio/client"
 import { hapioKey } from "@/lib/hapio/hooks"
 import type { Uuid } from "@/lib/hapio/types"
+import { useHapioQuery } from "@/lib/hapio/use-hapio-query"
 
 /** IDs of the resources associated with a service. */
 export function useServiceResourceIds(serviceId: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("services", serviceId, "resources"),
     queryFn: ({ signal }) => hapio.services.resources.list(serviceId!, signal),
     enabled: !!serviceId,
@@ -71,7 +72,7 @@ export function ServiceResourceCombobox({
           {showAll
             ? "Showing every resource."
             : ids.length
-              ? `Showing the ${ids.length === 1 ? "resource" : `${ids.length} resources`} that provide this service.`
+              ? `Showing the ${ids.length === 1 ? "resource that provides" : `${ids.length} resources that provide`} this service.`
               : "No resources provide this service yet."}
           <Button
             type="button"

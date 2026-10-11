@@ -7,9 +7,40 @@ import { addDays, format, isValid, parseISO } from "date-fns"
 
 const WALL_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/
 
+/**
+ * CLDR, and so V8/ICU, still uses the old names of these zones, while Hapio and the IANA
+ * database use the current ones (Asia/Kolkata, Europe/Kyiv, …).
+ */
+const LEGACY_TIME_ZONES: Record<string, string> = {
+  "Africa/Asmera": "Africa/Asmara",
+  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "America/Catamarca": "America/Argentina/Catamarca",
+  "America/Coral_Harbour": "America/Atikokan",
+  "America/Cordoba": "America/Argentina/Cordoba",
+  "America/Godthab": "America/Nuuk",
+  "America/Indianapolis": "America/Indiana/Indianapolis",
+  "America/Jujuy": "America/Argentina/Jujuy",
+  "America/Louisville": "America/Kentucky/Louisville",
+  "America/Mendoza": "America/Argentina/Mendoza",
+  "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Rangoon": "Asia/Yangon",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "Europe/Kiev": "Europe/Kyiv",
+  "Pacific/Enderbury": "Pacific/Kanton",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+  "Pacific/Truk": "Pacific/Chuuk",
+}
+
+/** The current IANA name of a zone the runtime reports under a legacy alias. */
+export function currentTimeZoneName(timeZone: string): string {
+  return LEGACY_TIME_ZONES[timeZone] ?? timeZone
+}
+
 export function browserTimeZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone
+    return currentTimeZoneName(Intl.DateTimeFormat().resolvedOptions().timeZone)
   } catch {
     return "UTC"
   }
@@ -127,12 +158,13 @@ export function isTimeString(value: string, allow24 = false): boolean {
 }
 
 let cachedZones: string[] | null = null
+/** The runtime's time zones under their current IANA names, sorted, with UTC. */
 export function timeZones(): string[] {
   if (cachedZones) return cachedZones
   try {
     const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
       .supportedValuesOf?.("timeZone")
-    cachedZones = supported && supported.length ? supported : ["UTC"]
+    cachedZones = supported && supported.length ? [...new Set(supported.map(currentTimeZoneName))].sort() : ["UTC"]
   } catch {
     cachedZones = ["UTC"]
   }

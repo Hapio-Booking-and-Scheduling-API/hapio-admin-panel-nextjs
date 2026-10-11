@@ -32,10 +32,12 @@ export function usePrefixedListState(prefix: string) {
   const urlKeys = useMemo(() => prefixedKeys(prefix, listParsers), [prefix])
   const [state, setState] = useQueryStates(listParsers, { history: "replace", urlKeys })
 
+  // Stable, so DataTable's clamp to the last page doesn't rerun its effect on every render.
+  const onPageChange = useCallback((page: number) => void setState({ page: page <= 1 ? null : page }), [setState])
   const pagination: PaginationState = {
     page: Math.max(1, state.page),
     perPage: Math.min(100, Math.max(1, state.per_page)),
-    onPageChange: (page) => void setState({ page: page <= 1 ? null : page }),
+    onPageChange,
     onPerPageChange: (perPage) => void setState({ per_page: perPage === 25 ? null : perPage, page: null }),
   }
 

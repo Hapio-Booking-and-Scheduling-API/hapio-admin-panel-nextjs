@@ -38,6 +38,9 @@ interface ComboboxProps {
   className?: string
   invalid?: boolean
   size?: "sm" | "default"
+  /** Accessible name when no visible <label> points at the trigger (e.g. filter bars). */
+  "aria-label"?: string
+  "aria-labelledby"?: string
 }
 
 export function Combobox({
@@ -54,6 +57,8 @@ export function Combobox({
   className,
   invalid,
   size = "default",
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const selected = options.find((o) => o.value === value)
@@ -69,6 +74,8 @@ export function Combobox({
             size={size}
             role="combobox"
             aria-expanded={open}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             aria-invalid={invalid || undefined}
             disabled={disabled}
             className={cn(
@@ -80,7 +87,7 @@ export function Combobox({
             <span className="truncate">
               {selected ? selected.label : value ? `${value.slice(0, 8)}…` : placeholder}
             </span>
-            {loading ? <Spinner /> : <ChevronsUpDownIcon className="opacity-50" />}
+            {loading ? <Spinner aria-hidden /> : <ChevronsUpDownIcon className="opacity-50" />}
           </Button>
         </PopoverTrigger>
         {clearable && value && !disabled && (
@@ -89,7 +96,7 @@ export function Combobox({
             variant="ghost"
             size="icon-xs"
             className="absolute top-1/2 right-7 -translate-y-1/2"
-            aria-label="Clear"
+            aria-label={`Clear ${ariaLabel ? ariaLabel.toLowerCase() : "selection"}`}
             onClick={() => onChange(null)}
           >
             <XIcon />

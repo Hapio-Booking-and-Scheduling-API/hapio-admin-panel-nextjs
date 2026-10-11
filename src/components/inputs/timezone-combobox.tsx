@@ -14,8 +14,16 @@ export function TimezoneCombobox(props: {
   placeholder?: string
   size?: "sm" | "default"
   className?: string
+  "aria-label"?: string
+  "aria-labelledby"?: string
 }) {
-  const options = useMemo(() => timeZones().map((tz) => ({ value: tz, label: tz })), [])
+  const { value } = props
+  const options = useMemo(() => {
+    const zones = timeZones()
+    // Keep a saved zone the runtime doesn't list (e.g. "Etc/GMT-3") selectable and readable.
+    const all = value && !zones.includes(value) ? [value, ...zones] : zones
+    return all.map((tz) => ({ value: tz, label: tz }))
+  }, [value])
   return (
     <Combobox
       options={options}

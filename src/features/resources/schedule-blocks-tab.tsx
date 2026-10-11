@@ -21,6 +21,7 @@ import type { Resource, ScheduleBlock } from "@/lib/hapio/types"
 
 import { useScheduleBlocks } from "./queries"
 import { ScheduleBlockFormDialog } from "./schedule-block-form"
+import { sameWallDay } from "./schedule-blocks-model"
 import { usePrefixedFilters, usePrefixedListState } from "./use-tab-state"
 import { formatMinutes, spanMinutes } from "./utils"
 
@@ -41,11 +42,6 @@ export function ScheduleBlockTypeBadge({ available }: { available: boolean }) {
   ) : (
     <Badge variant="destructive">Blocked</Badge>
   )
-}
-
-/** Both timestamps carry the location's offset, so their date parts are local dates. */
-function sameWallDay(a: string, b: string) {
-  return a.slice(0, 10) === b.slice(0, 10)
 }
 
 export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
@@ -123,6 +119,7 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
       className: "w-10 text-right",
       cell: (b) => (
         <RowActions
+          label={`Actions for block ${formatDateTime(b.starts_at)}`}
           actions={[
             { label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ block: b }) },
             {
@@ -154,6 +151,7 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
               size="sm"
               clearable
               placeholder="Any location"
+              aria-label="Location filter"
               value={filters.location}
               onChange={(location) => setFilters({ location })}
             />

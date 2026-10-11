@@ -100,6 +100,7 @@ export function ServicesPage() {
       className: "w-10 text-right",
       cell: (s) => (
         <RowActions
+          label={`Actions for ${s.name}`}
           actions={[
             { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(s) },
             {

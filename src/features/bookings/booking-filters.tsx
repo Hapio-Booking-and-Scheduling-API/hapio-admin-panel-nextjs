@@ -1,76 +1,24 @@
 "use client"
 
-import { parseAsString, parseAsStringLiteral } from "nuqs"
-
 import { useListFilters } from "@/components/data-table/use-list-state"
-import {
-  AdvancedFilters,
-  parseAsFilterRows,
-  rowsToParams,
-  type FilterFieldDef,
-} from "@/components/filters/advanced-filters"
+import { AdvancedFilters, type FilterFieldDef } from "@/components/filters/advanced-filters"
 import { FilterBar } from "@/components/filters/filter-bar"
 import { SortSelect, sortOptions } from "@/components/filters/sort-select"
 import { TriStateFilter } from "@/components/filters/tri-state-filter"
 import { EntityCombobox } from "@/components/inputs/entity-combobox"
-import type { BookingListParams } from "@/lib/hapio/client"
 import { indexById, useAllLocations } from "@/lib/hapio/hooks"
 
+import { BOOKING_FILTER_PARSERS, bookingFiltersActive, type BookingFilters } from "./booking-filters-model"
 import { DateRangeFilter } from "./date-range-filter"
 import { BOOKING_SORT_FIELDS } from "./utils"
 
-const INCLUSION = ["exclude", "include", "only"] as const
-
-/**
- * URL state shared by the bookings and booking-groups lists. The `location`,
- * `resource` and `service` keys are a public contract: other pages link to
- * e.g. `/bookings?location=<id>`.
- */
-const BOOKING_FILTER_PARSERS = {
-  from: parseAsString,
-  to: parseAsString,
-  location: parseAsString,
-  resource: parseAsString,
-  service: parseAsString,
-  // The API hides temporary and canceled bookings by default; an admin wants to see everything.
-  temporary: parseAsStringLiteral(INCLUSION).withDefault("include"),
-  canceled: parseAsStringLiteral(INCLUSION).withDefault("include"),
-  f: parseAsFilterRows,
-}
+export { bookingFilterParams, bookingFiltersActive, type BookingFilters } from "./booking-filters-model"
 
 export function useBookingFilters() {
   return useListFilters(BOOKING_FILTER_PARSERS)
 }
 
-type BookingFilterState = ReturnType<typeof useBookingFilters>
-export type BookingFilters = BookingFilterState[0]
-type SetBookingFilters = BookingFilterState[1]
-
-export function bookingFilterParams(filters: BookingFilters, fields: FilterFieldDef[]): BookingListParams {
-  return {
-    from: filters.from ?? undefined,
-    to: filters.to ?? undefined,
-    location: filters.location ?? undefined,
-    resource: filters.resource ?? undefined,
-    service: filters.service ?? undefined,
-    temporary: filters.temporary,
-    canceled: filters.canceled,
-    ...rowsToParams(filters.f, fields),
-  }
-}
-
-export function bookingFiltersActive(filters: BookingFilters): boolean {
-  return (
-    !!filters.from ||
-    !!filters.to ||
-    !!filters.location ||
-    !!filters.resource ||
-    !!filters.service ||
-    filters.temporary !== "include" ||
-    filters.canceled !== "include" ||
-    !!filters.f?.length
-  )
-}
+type SetBookingFilters = ReturnType<typeof useBookingFilters>[1]
 
 const SORT_OPTIONS = sortOptions(BOOKING_SORT_FIELDS)
 
@@ -81,6 +29,7 @@ export function BookingFilterBar({
   fields,
   sort,
   onSortChange,
+  sortFields,
 }: {
   filters: BookingFilters
   setFilters: SetBookingFilters
@@ -88,8 +37,11 @@ export function BookingFilterBar({
   fields: FilterFieldDef[]
   sort: string
   onSortChange: (sort: string) => void
+  /** The sorts the list's endpoint accepts (default: the bookings sorts). */
+  sortFields?: Array<[key: string, label: string]>
 }) {
   const locations = useAllLocations()
+  const options = sortFields ? sortOptions(sortFields) : SORT_OPTIONS
   const zone = filters.location ? indexById(locations.data).get(filters.location)?.time_zone : undefined
 
   return (
@@ -105,6 +57,7 @@ export function BookingFilterBar({
           size="sm"
           clearable
           placeholder="Any location"
+          aria-label="Location filter"
           value={filters.location}
           onChange={(location) => setFilters({ location })}
         />
@@ -115,6 +68,7 @@ export function BookingFilterBar({
           size="sm"
           clearable
           placeholder="Any resource"
+          aria-label="Resource filter"
           value={filters.resource}
           onChange={(resource) => setFilters({ resource })}
         />
@@ -125,6 +79,7 @@ export function BookingFilterBar({
           size="sm"
           clearable
           placeholder="Any service"
+          aria-label="Service filter"
           value={filters.service}
           onChange={(service) => setFilters({ service })}
         />
@@ -132,7 +87,7 @@ export function BookingFilterBar({
       <TriStateFilter noun="temporary" value={filters.temporary} onChange={(temporary) => setFilters({ temporary })} />
       <TriStateFilter noun="canceled" value={filters.canceled} onChange={(canceled) => setFilters({ canceled })} />
       <AdvancedFilters fields={fields} value={filters.f} onChange={(f) => setFilters({ f })} />
-      <SortSelect value={sort} onChange={onSortChange} options={SORT_OPTIONS} />
+      <SortSelect value={sort} onChange={onSortChange} options={options} />
     </FilterBar>
   )
 }

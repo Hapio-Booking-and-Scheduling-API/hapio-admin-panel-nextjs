@@ -5,7 +5,8 @@ import { useId, useState } from "react"
 import { FormDialog } from "@/components/form/form-dialog"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { hapio } from "@/lib/hapio/client"
-import { useHapioMutation } from "@/lib/hapio/hooks"
+import { isHapioError } from "@/lib/hapio/errors"
+import { toastUnlessFieldErrors, useHapioMutation } from "@/lib/hapio/hooks"
 import type { Booking } from "@/lib/hapio/types"
 
 import { BookingGroupIdInput } from "./group-id-input"
@@ -24,11 +25,13 @@ export function MoveToGroupDialog({
   const id = useId()
   const [groupId, setGroupId] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [formErrors, setFormErrors] = useState<string[]>([])
   const current = booking.booking_group?.id
 
   const close = () => {
     setGroupId("")
     setError(null)
+    setFormErrors([])
     onOpenChange(false)
   }
 
@@ -37,6 +40,14 @@ export function MoveToGroupDialog({
     {
       success: current ? "Booking moved to group" : "Booking added to group",
       onSuccess: close,
+      // Validation errors are shown in the dialog.
+      toastErrors: toastUnlessFieldErrors,
+      onError: (err) => {
+        if (!isHapioError(err) || !err.errors) return
+        const { booking_group_id: groupErrors, ...rest } = err.errors
+        if (groupErrors?.length) setError(groupErrors.join(" "))
+        setFormErrors(Object.values(rest).map((messages) => messages.join(" ")))
+      },
     }
   )
 
@@ -48,6 +59,7 @@ export function MoveToGroupDialog({
       description="The booking keeps its times and status; only its group changes."
       submitLabel={current ? "Move booking" : "Add to group"}
       pending={mutation.isPending}
+      formErrors={formErrors}
       onSubmit={(event) => {
         event.preventDefault()
         const target = groupId.trim()
@@ -60,6 +72,7 @@ export function MoveToGroupDialog({
           return
         }
         setError(null)
+        setFormErrors([])
         mutation.mutate(target)
       }}
     >

@@ -32,13 +32,13 @@ export function OrderedResourceList({
             <li key={id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
               <span className="w-5 text-right text-muted-foreground tabular-nums">{index + 1}.</span>
               <span className="min-w-0 flex-1 truncate">{byId.get(id)?.name ?? id}</span>
-              <Button type="button" variant="ghost" size="icon-xs" disabled={index === 0} onClick={() => move(index, -1)} aria-label="Move up">
+              <Button type="button" variant="ghost" size="icon-xs" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${byId.get(id)?.name ?? id} up`}>
                 <ArrowUpIcon />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" disabled={index === value.length - 1} onClick={() => move(index, 1)} aria-label="Move down">
+              <Button type="button" variant="ghost" size="icon-xs" disabled={index === value.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${byId.get(id)?.name ?? id} down`}>
                 <ArrowDownIcon />
               </Button>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(value.filter((v) => v !== id))} aria-label="Remove">
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange(value.filter((v) => v !== id))} aria-label={`Remove ${byId.get(id)?.name ?? id}`}>
                 <XIcon />
               </Button>
             </li>
@@ -50,6 +50,7 @@ export function OrderedResourceList({
         value={null}
         exclude={value}
         placeholder="Add resource…"
+        aria-label="Add resource to priority"
         onChange={(id) => id && onChange([...value, id])}
       />
     </div>

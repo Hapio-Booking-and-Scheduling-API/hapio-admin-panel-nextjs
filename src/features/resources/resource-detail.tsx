@@ -1,5 +1,6 @@
 "use client"
 
+import { useQueryClient } from "@tanstack/react-query"
 import { CalendarCheckIcon, PencilIcon, PowerIcon, Trash2Icon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -21,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDateTime } from "@/lib/format/datetime"
 import { omitKeys } from "@/lib/format/json"
 import { hapio } from "@/lib/hapio/client"
-import { useHapioMutation, useResource } from "@/lib/hapio/hooks"
+import { hapioKey, useHapioMutation, useResource } from "@/lib/hapio/hooks"
 import type { Resource, ResourceInput } from "@/lib/hapio/types"
 
 import { AvailabilityTab } from "./availability-tab"
@@ -45,6 +46,7 @@ const TAB_LABELS: Record<ResourceTab, string> = {
 
 export function ResourceDetail({ id }: { id: string }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const query = useResource(id)
   const [editing, setEditing] = useState(false)
   const [tab, setTab] = useQueryState(
@@ -59,14 +61,22 @@ export function ResourceDetail({ id }: { id: string }) {
   )
   const remove = useHapioMutation(() => hapio.resources.delete(id), {
     success: "Resource deleted",
-    onSuccess: () => router.push("/resources"),
+    onSuccess: () => {
+      router.push("/resources")
+      // Drop the deleted resource so the refresh after the mutation doesn't refetch it (404).
+      queryClient.removeQueries({ queryKey: hapioKey("resources", "detail", id) })
+    },
   })
   const replace = useHapioMutation((body: unknown) => hapio.resources.replace(id, body as ResourceInput), {
     success: "Resource replaced",
+    // The Replace dialog shows the error inline.
+    toastErrors: false,
   })
 
-  if (query.isLoading) return <DetailSkeleton />
-  if (query.error || !query.data) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
+  // Keep showing the resource while we have it, even if a later refetch failed.
+  if (!query.data) {
+    return query.error ? <ErrorAlert error={query.error} onRetry={() => query.refetch()} /> : <DetailSkeleton />
+  }
 
   const resource = query.data
   const navigate = (next: ResourceTab) => void setTab(next)

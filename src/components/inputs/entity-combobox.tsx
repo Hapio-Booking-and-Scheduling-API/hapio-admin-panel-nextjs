@@ -24,6 +24,8 @@ interface EntityComboboxProps {
   only?: string[]
   /** Hide these IDs. */
   exclude?: string[]
+  "aria-label"?: string
+  "aria-labelledby"?: string
 }
 
 function useEntityOptions(kind: EntityKind) {

@@ -7,9 +7,16 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p e2e",
     "test": "vitest run",
-    "mock": "node scripts/mock-hapio.mjs"
+    "mock": "node scripts/mock-hapio.mjs",
+    "seed": "node scripts/seed-hapio.mjs",
+    "test:watch": "vitest",
+    "e2e:build": "node scripts/e2e-build.mjs",
+    "test:e2e": "npm run e2e:build && playwright test",
+    "test:e2e:only": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm run typecheck && npm run lint && npm test && npm run test:e2e"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -34,6 +41,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/turbopack": "^4",
     "@tanstack/react-query-devtools": "^5.104.1",
     "@types/node": "^22.20.5",
@@ -44,5 +53,8 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "playwright-core": "1.63.0"
   }
 }

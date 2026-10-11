@@ -3,7 +3,6 @@
 import {
   keepPreviousData,
   useMutation,
-  useQuery,
   useQueryClient,
   type QueryKey,
 } from "@tanstack/react-query"
@@ -18,7 +17,9 @@ import {
   type ServiceListParams,
 } from "./client"
 import { describeError, isHapioError } from "./errors"
-import type { Location, Paginated, Resource, Service, Uuid } from "./types"
+import { fetchAll } from "./fetch-all"
+import type { Location, Resource, Service, Uuid } from "./types"
+import { useHapioQuery } from "./use-hapio-query"
 
 /** All Hapio query keys start with "hapio", so a mutation can refresh everything at once. */
 export const hapioKey = (...parts: unknown[]): QueryKey => ["hapio", ...parts]
@@ -75,7 +76,7 @@ export const toastUnlessFieldErrors = (error: unknown) =>
 // Queries
 
 export function useProject() {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("project"),
     queryFn: ({ signal }) => hapio.project.get(signal),
     retry: false,
@@ -84,7 +85,7 @@ export function useProject() {
 }
 
 export function useLocations(params: LocationListParams) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("locations", "list", params),
     queryFn: ({ signal }) => hapio.locations.list(params, signal),
     placeholderData: keepPreviousData,
@@ -92,7 +93,7 @@ export function useLocations(params: LocationListParams) {
 }
 
 export function useLocation(id: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("locations", "detail", id),
     queryFn: ({ signal }) => hapio.locations.get(id!, signal),
     enabled: !!id,
@@ -100,7 +101,7 @@ export function useLocation(id: Uuid | null | undefined) {
 }
 
 export function useResources(params: ResourceListParams) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", "list", params),
     queryFn: ({ signal }) => hapio.resources.list(params, signal),
     placeholderData: keepPreviousData,
@@ -108,7 +109,7 @@ export function useResources(params: ResourceListParams) {
 }
 
 export function useResource(id: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", "detail", id),
     queryFn: ({ signal }) => hapio.resources.get(id!, signal),
     enabled: !!id,
@@ -116,7 +117,7 @@ export function useResource(id: Uuid | null | undefined) {
 }
 
 export function useServices(params: ServiceListParams) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("services", "list", params),
     queryFn: ({ signal }) => hapio.services.list(params, signal),
     placeholderData: keepPreviousData,
@@ -124,7 +125,7 @@ export function useServices(params: ServiceListParams) {
 }
 
 export function useService(id: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("services", "detail", id),
     queryFn: ({ signal }) => hapio.services.get(id!, signal),
     enabled: !!id,
@@ -132,7 +133,7 @@ export function useService(id: Uuid | null | undefined) {
 }
 
 export function useBookings(params: BookingListParams, options: { enabled?: boolean } = {}) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("bookings", "list", params),
     queryFn: ({ signal }) => hapio.bookings.list(params, signal),
     placeholderData: keepPreviousData,
@@ -141,7 +142,7 @@ export function useBookings(params: BookingListParams, options: { enabled?: bool
 }
 
 export function useBooking(id: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("bookings", "detail", id),
     queryFn: ({ signal }) => hapio.bookings.get(id!, signal),
     enabled: !!id,
@@ -149,7 +150,7 @@ export function useBooking(id: Uuid | null | undefined) {
 }
 
 export function useBookingGroups(params: BookingGroupListParams) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("booking-groups", "list", params),
     queryFn: ({ signal }) => hapio.bookingGroups.list(params, signal),
     placeholderData: keepPreviousData,
@@ -157,7 +158,7 @@ export function useBookingGroups(params: BookingGroupListParams) {
 }
 
 export function useBookingGroup(id: Uuid | null | undefined) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("booking-groups", "detail", id),
     queryFn: ({ signal }) => hapio.bookingGroups.get(id!, signal),
     enabled: !!id,
@@ -165,27 +166,10 @@ export function useBookingGroup(id: Uuid | null | undefined) {
 }
 
 // ---------------------------------------------------------------------------
-// "All" lists for pickers. The API has no "contains" filter, so pickers load
-// every item (including disabled ones) and filter client-side.
-
-const MAX_PAGES = 20
-
-async function fetchAll<T>(
-  load: (page: number, signal?: AbortSignal) => Promise<Paginated<T>>,
-  signal?: AbortSignal
-): Promise<T[]> {
-  const first = await load(1, signal)
-  const items = [...first.data]
-  const last = Math.min(first.meta.last_page, MAX_PAGES)
-  for (let page = 2; page <= last; page++) {
-    const next = await load(page, signal)
-    items.push(...next.data)
-  }
-  return items
-}
+// "All" lists for pickers (see fetch-all.ts).
 
 export function useAllLocations() {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("locations", "all"),
     queryFn: ({ signal }) =>
       fetchAll<Location>(
@@ -197,7 +181,7 @@ export function useAllLocations() {
 }
 
 export function useAllResources() {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("resources", "all"),
     queryFn: ({ signal }) =>
       fetchAll<Resource>(
@@ -209,7 +193,7 @@ export function useAllResources() {
 }
 
 export function useAllServices() {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("services", "all"),
     queryFn: ({ signal }) =>
       fetchAll<Service>(

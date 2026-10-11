@@ -4,10 +4,10 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
-import { z } from "zod"
+import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form/form-dialog"
-import { FormField } from "@/components/form/form-field"
+import { FormField, labelIdFor } from "@/components/form/form-field"
 import { FormSection } from "@/components/form/form-section"
 import { JsonEditor } from "@/components/inputs/json-editor"
 import { OrderedResourceList } from "@/components/inputs/ordered-id-list"
@@ -16,58 +16,13 @@ import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { browserTimeZone } from "@/lib/format/datetime"
-import { metadataToText } from "@/lib/format/json"
-import { metadataText, pickDirty, textToMetadata } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
 import { applyValidationErrors } from "@/lib/hapio/errors"
 import { toastUnlessFieldErrors, useHapioMutation } from "@/lib/hapio/hooks"
-import {
-  RESOURCE_SELECTION_STRATEGIES,
-  type Location,
-  type LocationInput,
-} from "@/lib/hapio/types"
+import { RESOURCE_SELECTION_STRATEGIES, type Location } from "@/lib/hapio/types"
 
 import { STRATEGY_LABELS } from "./constants"
-
-const schema = z.object({
-  name: z.string().trim().min(1, "Required").max(100, "At most 100 characters"),
-  time_zone: z.string().min(1, "Required"),
-  resource_selection_strategy: z.enum(RESOURCE_SELECTION_STRATEGIES),
-  resource_selection_priority: z.array(z.string()),
-  enabled: z.boolean(),
-  metadata: metadataText(),
-  protected_metadata: metadataText(),
-})
-type Values = z.infer<typeof schema>
-const FIELDS = Object.keys(schema.shape)
-
-function toValues(location?: Location): Values {
-  return {
-    name: location?.name ?? "",
-    time_zone: location?.time_zone ?? browserTimeZone(),
-    resource_selection_strategy: location?.resource_selection_strategy ?? "randomize",
-    resource_selection_priority: location?.resource_selection_priority ?? [],
-    enabled: location?.enabled ?? true,
-    metadata: metadataToText(location?.metadata),
-    protected_metadata: metadataToText(location?.protected_metadata),
-  }
-}
-
-function toBody(values: Partial<Values>): Partial<LocationInput> {
-  const body: Partial<LocationInput> = {}
-  if (values.name !== undefined) body.name = values.name
-  if (values.time_zone !== undefined) body.time_zone = values.time_zone
-  if (values.resource_selection_strategy !== undefined)
-    body.resource_selection_strategy = values.resource_selection_strategy
-  if (values.resource_selection_priority !== undefined)
-    body.resource_selection_priority = values.resource_selection_priority
-  if (values.enabled !== undefined) body.enabled = values.enabled
-  if (values.metadata !== undefined) body.metadata = textToMetadata(values.metadata)
-  if (values.protected_metadata !== undefined)
-    body.protected_metadata = textToMetadata(values.protected_metadata)
-  return body
-}
+import { FIELDS, schema, toCreateBody, toPatchBody, toValues, type Values } from "./location-form-model"
 
 export function LocationFormDialog({
   open,
@@ -84,26 +39,33 @@ export function LocationFormDialog({
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     values: toValues(location),
-    resetOptions: { keepDirtyValues: false },
+    // A refetch of the location updates the untouched fields but keeps what the user typed.
+    resetOptions: { keepDirtyValues: true },
   })
 
   // Read during render so react-hook-form tracks dirty state.
   const { dirtyFields } = form.formState
 
+  /** Closes the dialog with a clean form that shows `next` when it opens again. */
+  const close = (next: Location | undefined) => {
+    form.reset(toValues(next), { keepDirtyValues: false })
+    setFormErrors([])
+    onOpenChange(false)
+  }
+
   const mutation = useHapioMutation(
     async (values: Values) => {
       if (location) {
-        return hapio.locations.patch(location.id, toBody(pickDirty(values, dirtyFields)))
+        return hapio.locations.patch(location.id, toPatchBody(values, dirtyFields))
       }
-      const body = toBody(values) as LocationInput
-      if (!values.protected_metadata) delete body.protected_metadata
-      return hapio.locations.create(body)
+      return hapio.locations.create(toCreateBody(values))
     },
     {
       success: location ? "Location updated" : "Location created",
       toastErrors: toastUnlessFieldErrors,
       onSuccess: (saved) => {
-        onOpenChange(false)
+        // The dialog stays mounted (detail page, kept-alive list): reopen it clean, without these edits.
+        close(location ? saved : undefined)
         if (!location) router.push(`/locations/${saved.id}`)
       },
       onError: (error) => setFormErrors(applyValidationErrors(error, form.setError, FIELDS)),
@@ -115,13 +77,7 @@ export function LocationFormDialog({
   return (
     <FormDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          form.reset(toValues(location))
-          setFormErrors([])
-        }
-        onOpenChange(next)
-      }}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close(location))}
       title={location ? "Edit location" : "New location"}
       description="Locations hold a time zone and decide how resources are picked for bookings."
       submitLabel={location ? "Save changes" : "Create location"}
@@ -130,6 +86,11 @@ export function LocationFormDialog({
       size="lg"
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
+        if (location && Object.keys(toPatchBody(values, dirtyFields)).length === 0) {
+          toast.info("No changes to save")
+          close(location)
+          return
+        }
         mutation.mutate(values)
       })}
     >
@@ -153,8 +114,13 @@ export function LocationFormDialog({
         name="resource_selection_strategy"
         label="Resource selection"
         description="Used when a booking is created without a resource."
-        render={({ field }) => (
-          <RadioGroup value={field.value} onValueChange={field.onChange} className="gap-2">
+        render={({ field, id }) => (
+          <RadioGroup
+            value={field.value}
+            onValueChange={field.onChange}
+            className="gap-2"
+            aria-labelledby={labelIdFor(id)}
+          >
             {RESOURCE_SELECTION_STRATEGIES.map((s) => (
               <Label key={s} className="flex items-start gap-3 rounded-lg border p-3 font-normal has-data-[state=checked]:border-primary/40 has-data-[state=checked]:bg-primary/5">
                 <RadioGroupItem value={s} className="mt-0.5" />

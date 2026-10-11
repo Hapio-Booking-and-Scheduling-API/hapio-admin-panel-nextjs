@@ -4,16 +4,8 @@ import { useSearchParams } from "next/navigation"
 
 import { PageHeader } from "@/components/entity/page-header"
 
-import { BookingCreateForm, type BookingFormDefaults } from "./booking-form"
-
-/**
- * A `+` in an unencoded offset (`…T10:00:00+02:00`) arrives as a space;
- * restore it so the timestamp stays valid.
- */
-function timestampParam(value: string | null): string | undefined {
-  if (!value) return undefined
-  return value.trim().replace(/ (\d{2}:?\d{2})$/, "+$1")
-}
+import { BookingCreateForm } from "./booking-form"
+import { bookingDefaultsFromParams } from "./booking-new-params"
 
 /**
  * `/bookings/new` prefill contract (used e.g. by the bookable-slots page):
@@ -22,18 +14,7 @@ function timestampParam(value: string | null): string | undefined {
  */
 export function BookingNewPage() {
   const params = useSearchParams()
-  const defaults: BookingFormDefaults = {
-    service_id: params.get("service") ?? undefined,
-    location_id: params.get("location") ?? undefined,
-    resource_id: params.get("resource") ?? undefined,
-    starts_at: timestampParam(params.get("starts_at")),
-    ends_at: timestampParam(params.get("ends_at")),
-    is_temporary: params.get("is_temporary") === "true" ? true : undefined,
-    booking_group_id: params.get("booking_group") ?? undefined,
-  }
-  const prefilled = Object.values(defaults).some((v) => v !== undefined)
-  // Drop undefined keys so they don't override the form's empty defaults.
-  const clean = Object.fromEntries(Object.entries(defaults).filter(([, v]) => v !== undefined)) as BookingFormDefaults
+  const { defaults: clean, prefilled } = bookingDefaultsFromParams(params)
 
   return (
     <div className="flex flex-col gap-4">

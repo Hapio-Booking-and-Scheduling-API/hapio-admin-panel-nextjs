@@ -5,7 +5,7 @@ import { CopyIcon, InfoIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useId, useState } from "react"
 import { Controller, useForm, useFormState, useWatch, type Control } from "react-hook-form"
-import { z } from "zod"
+import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form/form-dialog"
 import { FormField } from "@/components/form/form-field"
@@ -23,261 +23,28 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { isTimeString } from "@/lib/format/datetime"
-import { durationToMinutes, isValidDuration, isZeroDuration } from "@/lib/format/duration"
-import { metadataToText } from "@/lib/format/json"
-import { durationValue, metadataText, nullableDurationValue, pickDirty, priceText, textToMetadata, textToPrice } from "@/lib/forms"
+import { pickDirty } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
 import { applyValidationErrors } from "@/lib/hapio/errors"
 import { toastUnlessFieldErrors, useHapioMutation } from "@/lib/hapio/hooks"
-import {
-  SERVICE_TYPES,
-  WEEKDAYS,
-  type DayTime,
-  type Service,
-  type ServiceDay,
-  type ServiceFixed,
-  type ServiceFlexible,
-  type ServiceInput,
-  type ServicePatch,
-  type ServiceType,
-  type Weekday,
-} from "@/lib/hapio/types"
+import { SERVICE_TYPES, WEEKDAYS, type Service, type ServiceInput, type ServicePatch, type Weekday } from "@/lib/hapio/types"
 
 import { OptionalDuration } from "./optional-duration"
+import {
+  DEFAULT_END,
+  DEFAULT_START,
+  FIELDS,
+  createBody,
+  errorFieldMap,
+  patchBody,
+  schema,
+  toValues,
+  weekdayRecord,
+  type DayMode,
+  type Values,
+} from "./service-form-model"
 import { SERVICE_TYPE_ICONS } from "./service-type-badge"
-import { SERVICE_TYPE_INFO, isPerWeekday, serviceTypeLabel } from "./utils"
-
-const DAY_MODES = ["same", "weekday"] as const
-type DayMode = (typeof DAY_MODES)[number]
-
-const weekdayTimes = () => z.record(z.enum(WEEKDAYS), z.string())
-
-// Every type's fields live in one flat form so switching type keeps what was
-// typed. Type-specific fields are validated only for the selected type.
-const baseSchema = z.object({
-  name: z.string().trim().min(1, "Required").max(100, "At most 100 characters"),
-  type: z.enum(SERVICE_TYPES),
-  // fixed
-  duration: z.string(),
-  // fixed & flexible
-  bookable_interval: z.string().nullable(),
-  // flexible
-  min_duration: z.string(),
-  max_duration: z.string().nullable(),
-  default_duration: z.string().nullable(),
-  duration_step: z.string(),
-  // day
-  day_times_mode: z.enum(DAY_MODES),
-  start_time: z.string(),
-  end_time: z.string(),
-  start_times: weekdayTimes(),
-  end_times: weekdayTimes(),
-  min_days: z.string(),
-  max_days: z.string(),
-  default_days: z.string(),
-  // common
-  price: priceText(),
-  buffer_time_before: durationValue(),
-  buffer_time_after: durationValue(),
-  booking_window_start: durationValue(),
-  booking_window_end: nullableDurationValue({ allowZero: false }),
-  cancelation_threshold: durationValue(),
-  enabled: z.boolean(),
-  metadata: metadataText(),
-  protected_metadata: metadataText(),
-})
-type Values = z.infer<typeof baseSchema>
-const FIELDS = Object.keys(baseSchema.shape)
-
-const TYPE_FIELDS: Record<ServiceType, ReadonlyArray<keyof Values>> = {
-  fixed: ["duration", "bookable_interval"],
-  flexible: ["min_duration", "max_duration", "default_duration", "duration_step", "bookable_interval"],
-  day: ["day_times_mode", "start_time", "end_time", "start_times", "end_times", "min_days", "max_days", "default_days"],
-}
-
-function durationIssue(value: string | null, nullable = false): string | null {
-  if (value === null) return nullable ? null : "Required"
-  if (!value) return "Required"
-  if (!isValidDuration(value)) return "Not a valid ISO 8601 duration (e.g. PT1H30M)"
-  if (isZeroDuration(value)) return "Must be longer than zero"
-  return null
-}
-
-/** "" → null; whole numbers ≥ 1 → number; anything else → NaN. */
-function parseDays(text: string): number | null {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-  return /^\d+$/.test(trimmed) && Number(trimmed) >= 1 ? Number(trimmed) : Number.NaN
-}
-
-const schema = baseSchema.superRefine((v, ctx) => {
-  const issue = (path: string, message: string) =>
-    ctx.addIssue({ code: "custom", path: path.split("."), message })
-  const checkDuration = (key: keyof Values, value: string | null, nullable = false) => {
-    const message = durationIssue(value, nullable)
-    if (message) issue(key, message)
-    return !message
-  }
-
-  if (v.type === "fixed") {
-    checkDuration("duration", v.duration)
-    checkDuration("bookable_interval", v.bookable_interval, true)
-  }
-
-  if (v.type === "flexible") {
-    const minOk = checkDuration("min_duration", v.min_duration)
-    const maxOk = checkDuration("max_duration", v.max_duration, true)
-    const defaultOk = checkDuration("default_duration", v.default_duration, true)
-    checkDuration("duration_step", v.duration_step)
-    checkDuration("bookable_interval", v.bookable_interval, true)
-    const min = durationToMinutes(v.min_duration) ?? 0
-    const max = v.max_duration === null ? Infinity : durationToMinutes(v.max_duration) ?? Infinity
-    if (minOk && maxOk && max < min) issue("max_duration", "Must be at least the minimum length")
-    if (minOk && maxOk && defaultOk && v.default_duration !== null) {
-      const def = durationToMinutes(v.default_duration) ?? 0
-      if (def < min || def > max) issue("default_duration", "Must be between the minimum and maximum length")
-    }
-  }
-
-  if (v.type === "day") {
-    const checkTime = (path: string, value: string) => {
-      if (!isTimeString(value)) issue(path, value ? "Not a valid time" : "Required")
-    }
-    if (v.day_times_mode === "same") {
-      checkTime("start_time", v.start_time)
-      checkTime("end_time", v.end_time)
-    } else {
-      for (const day of WEEKDAYS) {
-        checkTime(`start_times.${day}`, v.start_times[day])
-        checkTime(`end_times.${day}`, v.end_times[day])
-      }
-    }
-    const min = parseDays(v.min_days)
-    const max = parseDays(v.max_days)
-    const def = parseDays(v.default_days)
-    if (min === null || Number.isNaN(min)) issue("min_days", min === null ? "Required" : "Enter a whole number of at least 1")
-    if (Number.isNaN(max)) issue("max_days", "Enter a whole number of at least 1, or leave empty")
-    if (Number.isNaN(def)) issue("default_days", "Enter a whole number of at least 1, or leave empty")
-    const minN = min !== null && !Number.isNaN(min) ? min : null
-    if (minN !== null && max !== null && !Number.isNaN(max) && max < minN) {
-      issue("max_days", "Must be at least the minimum days")
-    }
-    if (minN !== null && def !== null && !Number.isNaN(def)) {
-      const maxN = max !== null && !Number.isNaN(max) ? max : Infinity
-      if (def < minN || def > maxN) issue("default_days", "Must be between the minimum and maximum days")
-    }
-  }
-})
-
-const DEFAULT_START = "09:00:00"
-const DEFAULT_END = "17:00:00"
-
-function weekdayRecord(value: DayTime | undefined, fallback: string): Record<Weekday, string> {
-  return Object.fromEntries(
-    WEEKDAYS.map((day) => [day, isPerWeekday(value) ? value[day] ?? fallback : value || fallback])
-  ) as Record<Weekday, string>
-}
-
-/** Every type's fields, all optional, for reading a service of any type. */
-type AnyServiceFields = Partial<
-  Omit<ServiceFixed, "type"> & Omit<ServiceFlexible, "type"> & Omit<ServiceDay, "type">
-> & { type?: ServiceType }
-
-function toValues(service?: Service): Values {
-  // Fields that don't apply to the service's type are absent; fall back to defaults.
-  const s = service as AnyServiceFields | undefined
-  const start = s?.start_time
-  const end = s?.end_time
-  const perWeekday = isPerWeekday(start) || isPerWeekday(end)
-  return {
-    name: s?.name ?? "",
-    type: s?.type ?? "fixed",
-    duration: s?.duration ?? "PT1H",
-    bookable_interval: s?.bookable_interval ?? null,
-    min_duration: s?.min_duration ?? "PT30M",
-    max_duration: s?.type === "flexible" ? s.max_duration ?? null : "PT4H",
-    default_duration: s?.default_duration ?? null,
-    duration_step: s?.duration_step ?? "PT30M",
-    day_times_mode: perWeekday ? "weekday" : "same",
-    start_time: isPerWeekday(start) ? start.monday : start ?? DEFAULT_START,
-    end_time: isPerWeekday(end) ? end.monday : end ?? DEFAULT_END,
-    start_times: weekdayRecord(start, DEFAULT_START),
-    end_times: weekdayRecord(end, DEFAULT_END),
-    min_days: String(s?.min_days ?? 1),
-    max_days: s?.max_days ? String(s.max_days) : "",
-    default_days: s?.default_days ? String(s.default_days) : "",
-    price: s?.price ?? "",
-    buffer_time_before: s?.buffer_time_before ?? "PT0S",
-    buffer_time_after: s?.buffer_time_after ?? "PT0S",
-    booking_window_start: s?.booking_window_start ?? "PT0S",
-    booking_window_end: s?.booking_window_end ?? null,
-    cancelation_threshold: s?.cancelation_threshold ?? "PT0S",
-    enabled: s?.enabled ?? true,
-    metadata: metadataToText(s?.metadata),
-    protected_metadata: metadataToText(s?.protected_metadata),
-  }
-}
-
-const COMMON_DIRECT = [
-  "name",
-  "buffer_time_before",
-  "buffer_time_after",
-  "booking_window_start",
-  "booking_window_end",
-  "cancelation_threshold",
-  "enabled",
-] as const
-
-/** Builds a request body from the fields `include` accepts, for the selected type only. */
-function toBody(values: Values, include: (key: keyof Values) => boolean): Record<string, unknown> {
-  const body: Record<string, unknown> = {}
-  for (const key of COMMON_DIRECT) if (include(key)) body[key] = values[key]
-  if (include("price")) body.price = textToPrice(values.price)
-  if (include("metadata")) body.metadata = textToMetadata(values.metadata)
-  if (include("protected_metadata")) body.protected_metadata = textToMetadata(values.protected_metadata)
-
-  switch (values.type) {
-    case "fixed":
-      if (include("duration")) body.duration = values.duration
-      if (include("bookable_interval")) body.bookable_interval = values.bookable_interval
-      break
-    case "flexible":
-      for (const key of TYPE_FIELDS.flexible) if (include(key)) body[key] = values[key]
-      break
-    case "day": {
-      const perWeekday = values.day_times_mode === "weekday"
-      const ordered = (times: Record<Weekday, string>) =>
-        Object.fromEntries(WEEKDAYS.map((day) => [day, times[day]]))
-      const modeChanged = include("day_times_mode")
-      if (modeChanged || include(perWeekday ? "start_times" : "start_time")) {
-        body.start_time = perWeekday ? ordered(values.start_times) : values.start_time
-      }
-      if (modeChanged || include(perWeekday ? "end_times" : "end_time")) {
-        body.end_time = perWeekday ? ordered(values.end_times) : values.end_time
-      }
-      if (include("min_days")) body.min_days = parseDays(values.min_days)
-      if (include("max_days")) body.max_days = parseDays(values.max_days)
-      if (include("default_days")) body.default_days = parseDays(values.default_days)
-      break
-    }
-  }
-  return body
-}
-
-/** API error keys like `start_time.monday` → form field names. */
-function errorFieldMap(mode: DayMode): Record<string, string> {
-  const map: Record<string, string> = {}
-  if (mode === "weekday") {
-    map.start_time = "start_times"
-    map.end_time = "end_times"
-  }
-  for (const day of WEEKDAYS) {
-    map[`start_time.${day}`] = mode === "weekday" ? `start_times.${day}` : "start_time"
-    map[`end_time.${day}`] = mode === "weekday" ? `end_times.${day}` : "end_time"
-  }
-  return map
-}
+import { SERVICE_TYPE_INFO, serviceTypeLabel } from "./utils"
 
 export function ServiceFormDialog({
   open,
@@ -294,34 +61,35 @@ export function ServiceFormDialog({
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     values: toValues(service),
-    resetOptions: { keepDirtyValues: false },
+    // A refetch of the service updates the untouched fields but keeps what the user typed.
+    resetOptions: { keepDirtyValues: true },
   })
 
   // Read during render so react-hook-form tracks dirty state.
   const { dirtyFields } = form.formState
 
+  /** PATCH body for an edit: the changed fields only. */
+  const editBody = (values: Values, original: Service) =>
+    patchBody(values, original, new Set(Object.keys(pickDirty(values, dirtyFields))))
+
+  /** Closes the dialog with a clean form that shows `next` when it opens again. */
+  const close = (next: Service | undefined) => {
+    form.reset(toValues(next), { keepDirtyValues: false })
+    setFormErrors([])
+    onOpenChange(false)
+  }
+
   const mutation = useHapioMutation(
     async (values: Values) => {
-      if (service) {
-        const dirty = new Set(Object.keys(pickDirty(values, dirtyFields)))
-        const typeChanged = values.type !== service.type
-        // Changing the type requires the new type's fields, so send them all.
-        const body = toBody(
-          values,
-          (key) => dirty.has(key) || (typeChanged && TYPE_FIELDS[values.type].includes(key))
-        )
-        if (typeChanged) body.type = values.type
-        return hapio.services.patch(service.id, body as ServicePatch)
-      }
-      const body: Record<string, unknown> = { type: values.type, ...toBody(values, () => true) }
-      if (!values.protected_metadata) delete body.protected_metadata
-      return hapio.services.create(body as unknown as ServiceInput)
+      if (service) return hapio.services.patch(service.id, editBody(values, service) as ServicePatch)
+      return hapio.services.create(createBody(values) as unknown as ServiceInput)
     },
     {
       success: service ? "Service updated" : "Service created",
       toastErrors: toastUnlessFieldErrors,
       onSuccess: (saved) => {
-        onOpenChange(false)
+        // The create dialog stays mounted in the kept-alive list, so start it over.
+        close(service ? saved : undefined)
         if (!service) router.push(`/services/${saved.id}`)
       },
       onError: (error, values) =>
@@ -352,13 +120,7 @@ export function ServiceFormDialog({
   return (
     <FormDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          form.reset(toValues(service))
-          setFormErrors([])
-        }
-        onOpenChange(next)
-      }}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close(service))}
       title={service ? "Edit service" : "New service"}
       description="Services define what can be booked: its length, price and booking rules."
       submitLabel={service ? "Save changes" : "Create service"}
@@ -367,6 +129,11 @@ export function ServiceFormDialog({
       size="xl"
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
+        if (service && Object.keys(editBody(values, service)).length === 0) {
+          toast.info("No changes to save")
+          close(service)
+          return
+        }
         mutation.mutate(values)
       })}
     >
@@ -558,7 +325,7 @@ export function ServiceFormDialog({
                 label="End time"
                 description="When bookings end on their last day."
                 render={({ field, id, invalid }) => (
-                  <TimeInput id={id} value={field.value} onChange={field.onChange} invalid={invalid} />
+                  <TimeInput id={id} value={field.value} onChange={field.onChange} invalid={invalid} allowEndOfDay />
                 )}
               />
             </div>
@@ -778,6 +545,7 @@ function WeekdayTimesGrid({ control, onCopyMonday }: { control: Control<Values>;
                         value={end.value}
                         onChange={end.onChange}
                         invalid={endState.invalid}
+                        allowEndOfDay
                       />
                     </div>
                     {(startState.error || endState.error) && (

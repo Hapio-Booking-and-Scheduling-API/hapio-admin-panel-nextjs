@@ -24,13 +24,15 @@ export const EMPTY_DURATION: DurationParts = {
 const DURATION_RE =
   /^P(?:(\d{1,4})Y)?(?:(\d{1,4})M)?(?:(\d{1,4})W)?(?:(\d{1,4})D)?(?:T(?:(\d{1,4})H)?(?:(\d{1,4})M)?(?:(\d{1,4})S)?)?$/
 
+/** Parses a Hapio duration. Whitespace anywhere makes it invalid, as it does for Hapio. */
 export function parseDuration(value: string | null | undefined): DurationParts | null {
   if (!value) return null
-  const match = DURATION_RE.exec(value.trim().toUpperCase())
+  const text = value.toUpperCase()
+  const match = DURATION_RE.exec(text)
   if (!match) return null
-  // "P" or "PT" alone are invalid.
+  // "P" or "PT" alone are invalid, and so is a trailing "T" ("P1DT").
   if (match.slice(1).every((g) => g === undefined)) return null
-  if (value.toUpperCase().endsWith("T")) return null
+  if (text.endsWith("T")) return null
   const [, y, mo, w, d, h, mi, s] = match.map((g) => (g === undefined ? 0 : Number(g)))
   return { years: y, months: mo, weeks: w, days: d, hours: h, minutes: mi, seconds: s }
 }

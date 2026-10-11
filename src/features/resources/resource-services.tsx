@@ -107,6 +107,7 @@ export function ResourceServicesTab({ resource }: { resource: Resource }) {
             value={null}
             exclude={associatedIds}
             placeholder={associate.isPending ? "Associating…" : "Associate service…"}
+            aria-label="Service to associate"
             disabled={associate.isPending || query.isLoading}
             onChange={(serviceId) => serviceId && associate.mutate(serviceId)}
           />

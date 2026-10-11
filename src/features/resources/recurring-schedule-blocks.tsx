@@ -5,7 +5,7 @@ import { useState } from "react"
 
 import { ConfirmDialog } from "@/components/entity/confirm-dialog"
 import { ErrorAlert } from "@/components/entity/error-alert"
-import { WeekTimeline, canonicalWeek, weekdayOnlyLabel, weeklySpans, weekdaySpan, wallMinutes } from "@/components/entity/week-timeline"
+import { WeekTimeline, canonicalWeek, weekdayOnlyLabel, weeklySpans } from "@/components/entity/week-timeline"
 import { WEEKDAY_LABELS } from "@/components/inputs/weekday-select"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,23 +17,14 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { shortTime } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation } from "@/lib/hapio/hooks"
 import { WEEKDAYS, type RecurringSchedule, type RecurringScheduleBlock, type Weekday } from "@/lib/hapio/types"
 
 import { RecurringBlockFormDialog, WeekdayHoursDialog } from "./recurring-block-forms"
 import { useRecurringScheduleBlocks } from "./queries"
+import { blockMinutes, blockTimes } from "./recurring-schedule-blocks-model"
 import { compareWeeklyBlocks, formatHours } from "./utils"
-
-function blockTimes(block: RecurringScheduleBlock) {
-  return `${shortTime(block.start_time)}–${shortTime(block.end_time)}`
-}
-
-function blockMinutes(block: RecurringScheduleBlock) {
-  const { start, end } = weekdaySpan(block.weekday, block.start_time, block.end_time)
-  return Math.max(0, wallMinutes(end) - wallMinutes(start))
-}
 
 /** The weekday blocks of one recurring schedule: weekly preview, list and editing. */
 export function RecurringScheduleBlocks({

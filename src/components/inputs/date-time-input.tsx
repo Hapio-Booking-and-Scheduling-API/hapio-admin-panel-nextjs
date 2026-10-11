@@ -16,6 +16,7 @@ export function DateTimeInput({
   disabled,
   showZone = true,
   size,
+  "aria-label": ariaLabel,
 }: {
   value: string | null | undefined
   onChange: (value: string) => void
@@ -25,12 +26,14 @@ export function DateTimeInput({
   disabled?: boolean
   showZone?: boolean
   size?: "sm"
+  "aria-label"?: string
 }) {
   return (
     <InputGroup className={size === "sm" ? "h-7" : undefined}>
       <InputGroupInput
         id={id}
         type="datetime-local"
+        aria-label={ariaLabel}
         value={toWallTime(value, timeZone)}
         disabled={disabled}
         aria-invalid={invalid || undefined}

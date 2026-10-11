@@ -3,40 +3,35 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
-import { z } from "zod"
+import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form/form-dialog"
-import { FormField } from "@/components/form/form-field"
+import { FormField, labelIdFor } from "@/components/form/form-field"
 import { TimeInput } from "@/components/inputs/time-input"
 import { WEEKDAY_LABELS, WeekdaySelect } from "@/components/inputs/weekday-select"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { isTimeString } from "@/lib/format/datetime"
 import { pickDirty } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
-import { applyValidationErrors, describeError, isHapioError } from "@/lib/hapio/errors"
+import { applyValidationErrors, describeError } from "@/lib/hapio/errors"
 import { toastUnlessFieldErrors, useHapioMutation } from "@/lib/hapio/hooks"
 import { WEEKDAYS, type RecurringScheduleBlock, type Weekday } from "@/lib/hapio/types"
 
-const startTime = () => z.string().refine((v) => isTimeString(v), "Enter a time")
-const endTime = () => z.string().refine((v) => isTimeString(v, true), "Enter a time")
-const endAfterStart = {
-  path: ["end_time"],
-  message: "Must be after the start time",
-}
-const isOrdered = (v: { start_time: string; end_time: string }) =>
-  !isTimeString(v.start_time) || !isTimeString(v.end_time, true) || v.end_time > v.start_time
-
-const OVERLAP_HINT = "Blocks in the same recurring schedule can't overlap."
+import {
+  BLOCK_FIELDS,
+  blockSchema,
+  BulkCreateError,
+  bulkResultMessage,
+  failureMessage,
+  hoursSchema,
+  OVERLAP_HINT,
+  PRESETS,
+  type BlockValues,
+  type HoursValues,
+} from "./recurring-block-forms-model"
 
 // ---------------------------------------------------------------------------
 // Single block
-
-const blockSchema = z
-  .object({ weekday: z.enum(WEEKDAYS), start_time: startTime(), end_time: endTime() })
-  .refine(isOrdered, endAfterStart)
-type BlockValues = z.infer<typeof blockSchema>
-const BLOCK_FIELDS = ["weekday", "start_time", "end_time"]
 
 /** Create or edit one weekday block. Mount it only while open. */
 export function RecurringBlockFormDialog({
@@ -89,6 +84,11 @@ export function RecurringBlockFormDialog({
       formErrors={formErrors}
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
+        if (block && Object.keys(pickDirty(values, dirtyFields)).length === 0) {
+          toast.info("No changes to save")
+          onClose()
+          return
+        }
         mutation.mutate(values)
       })}
     >
@@ -124,34 +124,6 @@ export function RecurringBlockFormDialog({
 
 // ---------------------------------------------------------------------------
 // Same hours on several weekdays
-
-const hoursSchema = z
-  .object({
-    weekdays: z.array(z.enum(WEEKDAYS)).min(1, "Pick at least one day"),
-    start_time: startTime(),
-    end_time: endTime(),
-  })
-  .refine(isOrdered, endAfterStart)
-type HoursValues = z.infer<typeof hoursSchema>
-
-const PRESETS: Array<{ label: string; days: Weekday[] }> = [
-  { label: "Mon–Fri", days: ["monday", "tuesday", "wednesday", "thursday", "friday"] },
-  { label: "Weekend", days: ["saturday", "sunday"] },
-  { label: "Every day", days: [...WEEKDAYS] },
-]
-
-class BulkCreateError extends Error {
-  constructor(readonly lines: string[]) {
-    super(lines.join("\n"))
-  }
-}
-
-function failureMessage(error: unknown): string {
-  if (isHapioError(error) && error.errors && Object.keys(error.errors).length) {
-    return Object.values(error.errors).flat().join(" ")
-  }
-  return describeError(error)
-}
 
 /** Adds the same start/end time on several weekdays (one request per day). Mount it only while open. */
 export function WeekdayHoursDialog({
@@ -189,12 +161,7 @@ export function WeekdayHoursDialog({
       return { created, failed, lines }
     },
     {
-      success: ({ created, failed }) =>
-        failed.length
-          ? `Added ${created} of ${created + failed.length} blocks`
-          : created === 1
-            ? "Block added"
-            : `Added ${created} blocks`,
+      success: bulkResultMessage,
       toastErrors: false,
       onSuccess: ({ failed, lines }) => {
         if (!failed.length) return onClose()
@@ -227,6 +194,7 @@ export function WeekdayHoursDialog({
           <div className="space-y-2">
             <ToggleGroup
               id={id}
+              aria-labelledby={labelIdFor(id)}
               type="multiple"
               variant="outline"
               size="sm"

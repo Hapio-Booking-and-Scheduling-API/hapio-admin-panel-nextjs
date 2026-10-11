@@ -1,14 +1,15 @@
 "use client"
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+
 
 import { hapio, type BookableSlotParams } from "@/lib/hapio/client"
 import { hapioKey } from "@/lib/hapio/hooks"
 import type { Uuid } from "@/lib/hapio/types"
+import { useHapioQuery, useHapioInfiniteQuery } from "@/lib/hapio/use-hapio-query"
 
 /** Resources associated with a service (not paginated). */
 export function useServiceResources(serviceId: Uuid) {
-  return useQuery({
+  return useHapioQuery({
     queryKey: hapioKey("services", serviceId, "resources"),
     queryFn: ({ signal }) => hapio.services.resources.list(serviceId, signal),
   })
@@ -21,7 +22,7 @@ export function useBookableSlots(
   serviceId: Uuid,
   params: Omit<BookableSlotParams, "page" | "per_page"> | null
 ) {
-  return useInfiniteQuery({
+  return useHapioInfiniteQuery({
     queryKey: hapioKey("services", serviceId, "bookable-slots", params),
     queryFn: ({ pageParam, signal }) =>
       hapio.services.bookableSlots(serviceId, { ...params!, page: pageParam, per_page: SLOTS_PER_PAGE }, signal),

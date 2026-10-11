@@ -1,56 +1,31 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useForm, useWatch } from "react-hook-form"
-import { z } from "zod"
+import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form/form-dialog"
-import { FormField } from "@/components/form/form-field"
+import { FormField, labelIdFor } from "@/components/form/form-field"
 import { DateTimeInput } from "@/components/inputs/date-time-input"
 import { EntityCombobox } from "@/components/inputs/entity-combobox"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { toHapioDateTime, toWallTime, wallAt } from "@/lib/format/datetime"
 import { pickDirty } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
 import { applyValidationErrors } from "@/lib/hapio/errors"
 import { indexById, toastUnlessFieldErrors, useAllLocations, useHapioMutation } from "@/lib/hapio/hooks"
 import type { ScheduleBlock, ScheduleBlockInput } from "@/lib/hapio/types"
 
-import { formatMinutes, spanMinutes } from "./utils"
-
-const schema = z
-  .object({
-    location_id: z.string().min(1, "Required"),
-    starts_at: z.string().min(1, "Required"),
-    ends_at: z.string().min(1, "Required"),
-    is_available: z.boolean(),
-  })
-  .refine((v) => !v.starts_at || !v.ends_at || Date.parse(v.ends_at) > Date.parse(v.starts_at), {
-    path: ["ends_at"],
-    message: "Must be after the start",
-  })
-type Values = z.infer<typeof schema>
-const FIELDS = ["location_id", "starts_at", "ends_at", "is_available"]
-const FIELD_MAP = { location: "location_id" }
-
-function toValues(block: ScheduleBlock | undefined, locationId: string | null | undefined, timeZone?: string): Values {
-  if (block) {
-    return {
-      location_id: block.location?.id ?? "",
-      starts_at: block.starts_at,
-      ends_at: block.ends_at,
-      is_available: block.is_available,
-    }
-  }
-  return {
-    location_id: locationId ?? "",
-    starts_at: toHapioDateTime(wallAt(1, 9, timeZone), timeZone),
-    ends_at: toHapioDateTime(wallAt(1, 17, timeZone), timeZone),
-    is_available: true,
-  }
-}
+import {
+  durationLabel,
+  FIELD_MAP,
+  FIELDS,
+  keepWallTime,
+  schema,
+  toValues,
+  type Values,
+} from "./schedule-block-form-model"
 
 const TYPE_OPTIONS = [
   {
@@ -83,8 +58,27 @@ export function ScheduleBlockFormDialog({
   const tzOf = (id: string | null | undefined) => (id ? byId.get(id)?.time_zone : undefined)
 
   const [formErrors, setFormErrors] = useState<string[]>([])
-  const [defaults] = useState(() => toValues(block, defaultLocationId, tzOf(defaultLocationId)))
+  const defaultZone = tzOf(defaultLocationId)
+  const [defaults] = useState(() => toValues(block, defaultLocationId, defaultZone))
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults })
+
+  // A new block can open before the locations have loaded; its default times were then
+  // computed in the browser's zone. Once the location's zone is known, recompute them there
+  // (untouched fields) or keep their wall-clock time (fields the user already edited).
+  const defaultsZone = useRef(defaultZone)
+  useEffect(() => {
+    if (block || !defaultZone || defaultsZone.current === defaultZone) return
+    const prevZone = defaultsZone.current
+    defaultsZone.current = defaultZone
+    // The user already picked another location: changeLocation took care of the times.
+    if (form.getValues("location_id") !== defaultLocationId) return
+    const next = toValues(undefined, defaultLocationId, defaultZone)
+    for (const name of ["starts_at", "ends_at"] as const) {
+      const value = form.getValues(name)
+      if (!form.getFieldState(name).isDirty) form.resetField(name, { defaultValue: next[name] })
+      else if (value) form.setValue(name, keepWallTime(value, prevZone, defaultZone), { shouldDirty: true })
+    }
+  }, [block, defaultLocationId, defaultZone, form])
 
   // Read during render so react-hook-form tracks dirty state.
   const { dirtyFields } = form.formState
@@ -93,8 +87,7 @@ export function ScheduleBlockFormDialog({
     name: ["location_id", "starts_at", "ends_at"],
   })
   const timeZone = tzOf(locationId)
-  const duration =
-    startsAt && endsAt && Date.parse(endsAt) > Date.parse(startsAt) ? formatMinutes(spanMinutes(startsAt, endsAt)) : null
+  const duration = durationLabel(startsAt, endsAt)
 
   const blocks = hapio.scheduleBlocks(resourceId)
   const mutation = useHapioMutation(
@@ -118,7 +111,7 @@ export function ScheduleBlockFormDialog({
     if (prevZone === nextZone) return
     for (const name of ["starts_at", "ends_at"] as const) {
       const value = form.getValues(name)
-      if (value) form.setValue(name, toHapioDateTime(toWallTime(value, prevZone), nextZone), { shouldDirty: true })
+      if (value) form.setValue(name, keepWallTime(value, prevZone, nextZone), { shouldDirty: true })
     }
   }
 
@@ -133,6 +126,11 @@ export function ScheduleBlockFormDialog({
       formErrors={formErrors}
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
+        if (block && Object.keys(pickDirty(values, dirtyFields)).length === 0) {
+          toast.info("No changes to save")
+          onClose()
+          return
+        }
         mutation.mutate(values)
       })}
     >
@@ -168,8 +166,9 @@ export function ScheduleBlockFormDialog({
         control={form.control}
         name="is_available"
         label="Type"
-        render={({ field }) => (
+        render={({ field, id }) => (
           <RadioGroup
+            aria-labelledby={labelIdFor(id)}
             value={field.value ? "available" : "blocked"}
             onValueChange={(v) => field.onChange(v === "available")}
             className="grid gap-2 sm:grid-cols-2"

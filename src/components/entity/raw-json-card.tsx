@@ -133,6 +133,7 @@ function ReplaceDialog({
           onChange={(e) => setText(e.target.value)}
           rows={18}
           spellCheck={false}
+          aria-label="JSON body"
           aria-invalid={!!parseError || undefined}
           className="max-h-[60vh] font-mono text-xs"
         />
@@ -142,8 +143,8 @@ function ReplaceDialog({
           <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={pending}>
-            {pending && <Spinner />} Replace
+          <Button onClick={submit} disabled={pending} aria-busy={pending}>
+            {pending && <Spinner aria-hidden />} Replace
           </Button>
         </DialogFooter>
       </DialogContent>

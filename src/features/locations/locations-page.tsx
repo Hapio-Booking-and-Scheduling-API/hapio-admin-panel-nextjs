@@ -48,7 +48,9 @@ export function LocationsPage() {
   })
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Location | null>(null)
+  // The row stays set after the dialog closes, so the title doesn't change while it animates out.
   const [deleting, setDeleting] = useState<Location | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const query = useLocations({
     page: list.page,
@@ -102,6 +104,7 @@ export function LocationsPage() {
       className: "w-10 text-right",
       cell: (l) => (
         <RowActions
+          label={`Actions for ${l.name}`}
           actions={[
             { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(l) },
             {
@@ -114,7 +117,10 @@ export function LocationsPage() {
               icon: <Trash2Icon />,
               destructive: true,
               separatorBefore: true,
-              onSelect: () => setDeleting(l),
+              onSelect: () => {
+                setDeleting(l)
+                setDeleteOpen(true)
+              },
             },
           ]}
         />
@@ -143,6 +149,7 @@ export function LocationsPage() {
             size="sm"
             clearable
             placeholder="Any time zone"
+            aria-label="Time zone filter"
             value={filters.timezone}
             onChange={(timezone) => setFilters({ timezone })}
           />
@@ -191,8 +198,8 @@ export function LocationsPage() {
         <LocationFormDialog open onOpenChange={(open) => !open && setEditing(null)} location={editing} />
       )}
       <ConfirmDialog
-        open={!!deleting}
-        onOpenChange={(open) => !open && setDeleting(null)}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
         title={`Delete ${deleting?.name ?? "location"}?`}
         description="This permanently deletes the location. Its bookings are kept but lose their location. To keep history intact, consider disabling it instead."
         confirmLabel="Delete location"

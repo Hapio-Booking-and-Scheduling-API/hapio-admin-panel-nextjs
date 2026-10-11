@@ -100,6 +100,7 @@ export function ResourcesPage() {
       className: "w-10 text-right",
       cell: (r) => (
         <RowActions
+          label={`Actions for ${r.name}`}
           actions={[
             { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(r) },
             {

@@ -50,8 +50,11 @@ export function parseDateString(value: string): Date {
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(NaN)
 }
 
+/** A real calendar date as `YYYY-MM-DD` (not "2026-02-30", which `new Date()` would roll over to March). */
 export function isDateString(value: string | null | undefined): value is string {
-  return !!value && isValid(parseDateString(value))
+  if (!value) return false
+  const date = parseDateString(value)
+  return isValid(date) && toDateString(date) === value
 }
 
 export function toDateString(date: Date): string {
@@ -72,9 +75,10 @@ export function zonedWallDate(iso: string, timeZone?: string | null): Date {
   return timeZone ? wallDate(toWallTime(iso, timeZone)) : wallDate(iso)
 }
 
-/** The current wall-clock time in a zone. */
+/** The current wall-clock time in a zone (the browser's zone when omitted, like `todayIn`). */
 export function nowWallDate(timeZone?: string | null): Date {
-  return zonedWallDate(new Date().toISOString(), timeZone)
+  // A plain Date's local fields already are the browser's wall time; an ISO string ends in Z (UTC).
+  return timeZone ? zonedWallDate(new Date().toISOString(), timeZone) : new Date()
 }
 
 export type ScheduleStatus = "active" | "upcoming" | "ended"

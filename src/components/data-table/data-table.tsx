@@ -11,6 +11,7 @@ import {
   InboxIcon,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import { cn } from "cn"
 
 import { ErrorAlert } from "@/components/entity/error-alert"
@@ -107,6 +108,13 @@ export function DataTable<T>({
     else onSortChange("")
   }
 
+  useClampToLastPage(pagination, meta)
+
+  // An empty page while the list isn't empty: past the end (e.g. the only row on the last
+  // page was deleted) and about to move back. Show placeholders, not the empty state.
+  const awaitingRows = !!meta && meta.total > 0 && data?.length === 0
+  const showSkeleton = (isLoading && !data) || awaitingRows
+
   if (error && !data) {
     return <ErrorAlert error={error} onRetry={onRetry} />
   }
@@ -142,7 +150,7 @@ export function DataTable<T>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading && !data
+            {showSkeleton
               ? Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
                     {columns.map((column) => (
@@ -173,7 +181,7 @@ export function DataTable<T>({
                 ))}
           </TableBody>
         </Table>
-        {!isLoading && data?.length === 0 && (
+        {!isLoading && !awaitingRows && data?.length === 0 && (
           <Empty className="rounded-none border-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -189,6 +197,20 @@ export function DataTable<T>({
       {pagination && meta && <DataTablePagination meta={meta} pagination={pagination} />}
     </div>
   )
+}
+
+/**
+ * Moves to the last page when the server says the current page is past the end: after
+ * deleting the only row on the last page, or from a deep link. Only `meta` that answers
+ * the current page counts (not placeholder data from the previous page).
+ */
+export function useClampToLastPage(pagination: PaginationState | undefined, meta: PaginationMeta | undefined) {
+  const page = pagination?.page
+  const onPageChange = pagination?.onPageChange
+  const last = meta && meta.current_page === page ? Math.max(1, meta.last_page) : null
+  useEffect(() => {
+    if (onPageChange && page !== undefined && last !== null && page > last) onPageChange(last)
+  }, [page, last, onPageChange])
 }
 
 export function DataTablePagination({

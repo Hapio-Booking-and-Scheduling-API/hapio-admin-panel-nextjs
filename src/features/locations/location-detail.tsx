@@ -1,9 +1,10 @@
 "use client"
 
+import { useQueryClient } from "@tanstack/react-query"
 import { CalendarCheckIcon, PencilIcon, PowerIcon, Trash2Icon } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useLayoutEffect, useState } from "react"
 
 import { useBreadcrumbLabel } from "@/components/layout/breadcrumbs"
 import { EnabledBadge } from "@/components/entity/badges"
@@ -20,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatDateTime } from "@/lib/format/datetime"
 import { omitKeys } from "@/lib/format/json"
 import { hapio } from "@/lib/hapio/client"
-import { indexById, useAllResources, useHapioMutation, useLocation } from "@/lib/hapio/hooks"
+import { hapioKey, indexById, useAllResources, useHapioMutation, useLocation } from "@/lib/hapio/hooks"
 import type { Location, LocationInput } from "@/lib/hapio/types"
 
 import { STRATEGY_LABELS } from "./constants"
@@ -30,27 +31,42 @@ const READ_ONLY = ["id", "created_at", "updated_at"] as const
 
 export function LocationDetail({ id }: { id: string }) {
   const router = useRouter()
-  const query = useLocation(id)
+  const queryClient = useQueryClient()
+  // Once deleted, the page shows this snapshot while it navigates away, and nothing observes
+  // (or refetches, getting a 404) the location. Hiding the page clears it, so coming back
+  // to the deleted location shows the 404.
+  const [deleted, setDeleted] = useState<Location | null>(null)
+  useLayoutEffect(() => () => setDeleted(null), [])
+  const query = useLocation(deleted ? null : id)
   const resources = useAllResources()
   const [editing, setEditing] = useState(false)
-  useBreadcrumbLabel(id, query.data?.name)
+  // Keep showing the location while we have it, even if a later refetch failed.
+  const location = deleted ?? query.data
+  useBreadcrumbLabel(id, location?.name)
 
   const toggle = useHapioMutation(
     (location: Location) => hapio.locations.patch(location.id, { enabled: !location.enabled }),
     { success: (l) => (l.enabled ? "Location enabled" : "Location disabled") }
   )
-  const remove = useHapioMutation(() => hapio.locations.delete(id), {
+  const remove = useHapioMutation((l: Location) => hapio.locations.delete(l.id), {
     success: "Location deleted",
-    onSuccess: () => router.push("/locations"),
+    onSuccess: (_, l) => {
+      setDeleted(l)
+      router.push("/locations")
+      // Drop the deleted location so the refresh after the mutation doesn't refetch it.
+      queryClient.removeQueries({ queryKey: hapioKey("locations", "detail", id) })
+    },
   })
   const replace = useHapioMutation((body: unknown) => hapio.locations.replace(id, body as LocationInput), {
     success: "Location replaced",
+    // The Replace dialog shows the error inline.
+    toastErrors: false,
   })
 
-  if (query.isLoading) return <DetailSkeleton />
-  if (query.error || !query.data) return <ErrorAlert error={query.error} onRetry={() => query.refetch()} />
+  if (!location) {
+    return query.error ? <ErrorAlert error={query.error} onRetry={() => query.refetch()} /> : <DetailSkeleton />
+  }
 
-  const location = query.data
   const byId = indexById(resources.data)
 
   return (
@@ -77,7 +93,7 @@ export function LocationDetail({ id }: { id: string }) {
               description="This permanently deletes the location. Its bookings are kept but lose their location. Consider disabling it instead."
               confirmLabel="Delete location"
               destructive
-              onConfirm={() => remove.mutateAsync()}
+              onConfirm={() => remove.mutateAsync(location)}
               trigger={
                 <Button variant="destructive">
                   <Trash2Icon /> Delete

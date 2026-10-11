@@ -1,7 +1,6 @@
 "use client"
 
 import { FilterIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react"
-import { parseAsJson } from "nuqs"
 import { useState } from "react"
 
 import { DateTimeInput } from "@/components/inputs/date-time-input"
@@ -18,63 +17,25 @@ import {
 } from "@/components/ui/select"
 import { formatDateTime, normalizeTime } from "@/lib/format/datetime"
 import { normalizePrice } from "@/lib/format/price"
+import { METADATA_OPERATORS, OPERATOR_LABELS, OPERATORS, type MetadataOperator } from "@/lib/hapio/query"
+
 import {
-  METADATA_OPERATORS,
-  OPERATOR_LABELS,
-  OPERATORS,
-  type MetadataFilter,
-  type MetadataOperator,
-  type OperatorFilter,
-} from "@/lib/hapio/query"
+  changeRowField,
+  completeRows,
+  emptyRow,
+  type FilterFieldDef,
+  type FilterRow,
+} from "./advanced-filters-model"
 
-export type FilterFieldType = "datetime" | "date" | "time" | "number" | "text" | "price" | "metadata"
-
-export interface FilterFieldDef {
-  /** Hapio query key, e.g. "starts_at", "metadata", "group_created_at". */
-  key: string
-  label: string
-  type: FilterFieldType
-}
-
-export interface FilterRow {
-  field: string
-  property?: string
-  op: MetadataOperator
-  value: string
-}
-
-function isFilterRow(value: unknown): value is FilterRow {
-  if (!value || typeof value !== "object") return false
-  const row = value as Record<string, unknown>
-  return typeof row.field === "string" && typeof row.op === "string" && typeof row.value === "string"
-}
-
-/** nuqs parser for filter rows kept in the URL (`?f=[...]`). */
-export const parseAsFilterRows = parseAsJson<FilterRow[]>((value) =>
-  Array.isArray(value) ? value.filter(isFilterRow) : null
-)
-
-/** Converts rows into Hapio query params (`key[op]=v`, `metadata[prop][op]=v`). */
-export function rowsToParams(
-  rows: FilterRow[] | null | undefined,
-  fields: FilterFieldDef[]
-): Record<string, OperatorFilter | MetadataFilter[]> {
-  const params: Record<string, OperatorFilter | MetadataFilter[]> = {}
-  for (const row of rows ?? []) {
-    const def = fields.find((f) => f.key === row.field)
-    if (!def || row.value === "") continue
-    if (def.type === "metadata") {
-      if (!row.property) continue
-      const list = (params[def.key] as MetadataFilter[] | undefined) ?? []
-      list.push({ property: row.property, operator: row.op, value: row.value })
-      params[def.key] = list
-    } else {
-      const existing = (params[def.key] as OperatorFilter | undefined) ?? {}
-      params[def.key] = { ...existing, [row.op]: row.value }
-    }
-  }
-  return params
-}
+export {
+  METADATA_FILTER_FIELDS,
+  TIMESTAMP_FILTER_FIELDS,
+  parseAsFilterRows,
+  rowsToParams,
+  type FilterFieldDef,
+  type FilterFieldType,
+  type FilterRow,
+} from "./advanced-filters-model"
 
 function displayValue(row: FilterRow, def: FilterFieldDef | undefined) {
   if (def?.type === "datetime") return formatDateTime(row.value)
@@ -85,32 +46,40 @@ function ValueInput({
   row,
   def,
   onChange,
+  label,
 }: {
   row: FilterRow
   def: FilterFieldDef | undefined
   onChange: (value: string) => void
+  label: string
 }) {
   switch (def?.type) {
     case "datetime":
-      return <DateTimeInput value={row.value} onChange={onChange} showZone={false} size="sm" />
+      return <DateTimeInput value={row.value} onChange={onChange} showZone={false} size="sm" aria-label={label} />
     case "date":
-      return <Input type="date" className="h-7" value={row.value} onChange={(e) => onChange(e.target.value)} />
+      return (
+        <Input type="date" className="h-7" aria-label={label} value={row.value} onChange={(e) => onChange(e.target.value)} />
+      )
     case "time":
       return (
         <Input
           type="time"
+          aria-label={label}
           className="h-7"
           value={row.value.slice(0, 5)}
           onChange={(e) => onChange(e.target.value ? normalizeTime(e.target.value) : "")}
         />
       )
     case "number":
-      return <Input type="number" className="h-7" value={row.value} onChange={(e) => onChange(e.target.value)} />
+      return (
+        <Input type="number" className="h-7" aria-label={label} value={row.value} onChange={(e) => onChange(e.target.value)} />
+      )
     case "price":
       return (
         <Input
           inputMode="decimal"
           className="h-7"
+          aria-label={label}
           placeholder="0.000"
           value={row.value}
           onChange={(e) => onChange(e.target.value)}
@@ -121,7 +90,15 @@ function ValueInput({
         />
       )
     default:
-      return <Input className="h-7" value={row.value} placeholder="Value" onChange={(e) => onChange(e.target.value)} />
+      return (
+        <Input
+          className="h-7"
+          aria-label={label}
+          value={row.value}
+          placeholder="Value"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )
   }
 }
 
@@ -147,7 +124,7 @@ export function AdvancedFilters({
     setDraft((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
 
   const apply = () => {
-    const rows = draft.filter((r) => r.value !== "" && (defOf(r.field)?.type !== "metadata" || r.property))
+    const rows = completeRows(draft, fields)
     onChange(rows.length ? rows : null)
     setOpen(false)
   }
@@ -157,7 +134,7 @@ export function AdvancedFilters({
       <Popover
         open={open}
         onOpenChange={(next) => {
-          if (next) setDraft(applied.length ? applied : [{ field: fields[0].key, op: "gte", value: "" }])
+          if (next) setDraft(applied.length ? applied : [emptyRow(fields)])
           setOpen(next)
         }}
       >
@@ -182,14 +159,17 @@ export function AdvancedFilters({
               const def = defOf(row.field)
               const ops = def?.type === "metadata" ? METADATA_OPERATORS : OPERATORS
               return (
-                <div key={index} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 sm:grid-cols-[10rem_auto_1fr_auto] sm:border-0 sm:p-0">
+                <div
+                  key={index}
+                  role="group"
+                  aria-label={`Condition ${index + 1}`}
+                  className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-2 sm:grid-cols-[10rem_auto_1fr_auto] sm:border-0 sm:p-0"
+                >
                   <Select
                     value={row.field}
-                    onValueChange={(field) =>
-                      update(index, { field, value: "", property: undefined, op: defOf(field)?.type === "metadata" ? "eq" : row.op })
-                    }
+                    onValueChange={(field) => update(index, changeRowField(row, field, fields))}
                   >
-                    <SelectTrigger size="sm" className="w-full">
+                    <SelectTrigger size="sm" className="w-full" aria-label="Field">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -201,7 +181,7 @@ export function AdvancedFilters({
                     </SelectContent>
                   </Select>
                   <Select value={row.op} onValueChange={(op) => update(index, { op: op as MetadataOperator })}>
-                    <SelectTrigger size="sm" className="w-auto">
+                    <SelectTrigger size="sm" className="w-auto" aria-label="Operator">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -217,19 +197,20 @@ export function AdvancedFilters({
                       <Input
                         className="h-7 w-32 font-mono text-xs"
                         placeholder="property"
+                        aria-label="Property"
                         value={row.property ?? ""}
                         onChange={(e) => update(index, { property: e.target.value })}
                       />
                     )}
                     <div className="min-w-0 flex-1">
-                      <ValueInput row={row} def={def} onChange={(v) => update(index, { value: v })} />
+                      <ValueInput row={row} def={def} label="Value" onChange={(v) => update(index, { value: v })} />
                     </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
-                    aria-label="Remove filter"
+                    aria-label={`Remove condition ${index + 1}`}
                     onClick={() => setDraft((rows) => rows.filter((_, i) => i !== index))}
                   >
                     <Trash2Icon />
@@ -241,7 +222,7 @@ export function AdvancedFilters({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDraft((rows) => [...rows, { field: fields[0].key, op: "gte", value: "" }])}
+                onClick={() => setDraft((rows) => [...rows, emptyRow(fields)])}
               >
                 <PlusIcon /> Add condition
               </Button>
@@ -276,7 +257,7 @@ export function AdvancedFilters({
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Remove filter"
+              aria-label={`Remove filter: ${def?.label ?? row.field}${row.property ? ` ${row.property}` : ""} ${OPERATOR_LABELS[row.op]} ${displayValue(row, def)}`}
               onClick={() => {
                 const rows = applied.filter((_, i) => i !== index)
                 onChange(rows.length ? rows : null)
@@ -290,13 +271,3 @@ export function AdvancedFilters({
     </>
   )
 }
-
-export const TIMESTAMP_FILTER_FIELDS: FilterFieldDef[] = [
-  { key: "created_at", label: "Created", type: "datetime" },
-  { key: "updated_at", label: "Updated", type: "datetime" },
-]
-
-export const METADATA_FILTER_FIELDS: FilterFieldDef[] = [
-  { key: "metadata", label: "Metadata", type: "metadata" },
-  { key: "protected_metadata", label: "Protected metadata", type: "metadata" },
-]

@@ -74,8 +74,8 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <Button variant={destructive ? "destructive" : "default"} onClick={confirm} disabled={pending}>
-            {pending && <Spinner />}
+          <Button variant={destructive ? "destructive" : "default"} onClick={confirm} disabled={pending} aria-busy={pending}>
+            {pending && <Spinner aria-hidden />}
             {confirmLabel}
           </Button>
         </AlertDialogFooter>

@@ -21,9 +21,9 @@ import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { dayRange, toHapioDateTime, todayIn } from "@/lib/format/datetime"
+import { dayRange, todayIn } from "@/lib/format/datetime"
 import { indexById, useAllLocations } from "@/lib/hapio/hooks"
-import type { Resource, TimeSpan } from "@/lib/hapio/types"
+import type { Resource } from "@/lib/hapio/types"
 
 import type { ResourceTab } from "./constants"
 import {
@@ -32,16 +32,8 @@ import {
   useResourceSchedule,
   useScheduleBlocks,
 } from "./queries"
-import {
-  addDaysTo,
-  formatHours,
-  isDateString,
-  mondayOf,
-  nowWallDate,
-  parseDateString,
-  spanMinutes,
-  zonedWallDate,
-} from "./utils"
+import { chipTimes, dayIndexOf, toDaySpans, weekDays, weekLabel, weekRange, type DaySpan } from "./availability-model"
+import { addDaysTo, formatHours, isDateString, mondayOf, nowWallDate, parseDateString } from "./utils"
 
 const STATE = {
   location: parseAsString,
@@ -49,23 +41,6 @@ const STATE = {
   booked: parseAsBoolean.withDefault(false),
 }
 const URL_KEYS = { location: "av_location", week: "av_week", booked: "av_booked" }
-
-interface DaySpan {
-  key: string
-  start: Date
-  end: Date
-  minutes: number
-}
-
-/** "09:00–17:00", "22:00–24:00", "22:00–Tue 02:00". */
-function chipTimes(start: Date, end: Date) {
-  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-  const minutesFromStartDay = wallMinutes(end) - wallMinutes(startDay)
-  if (minutesFromStartDay <= 1440) {
-    return `${format(start, "HH:mm")}–${minutesFromStartDay === 1440 ? "24:00" : format(end, "HH:mm")}`
-  }
-  return `${format(start, "HH:mm")}–${format(end, "EEE HH:mm")}`
-}
 
 /** Picks the location to show first: one the resource has schedules at, else the first location. */
 function useDefaultLocation(resourceId: string, enabled: boolean) {
@@ -102,13 +77,8 @@ export function AvailabilityTab({
   const currentMonday = mondayOf(today)
   const monday = isDateString(state.week) ? mondayOf(state.week) : currentMonday
   const isCurrentWeek = monday === currentMonday
-  const days = Array.from({ length: 7 }, (_, i) => parseDateString(addDaysTo(monday, i)))
-  const range = location
-    ? {
-        from: toHapioDateTime(`${monday}T00:00`, timeZone),
-        to: toHapioDateTime(`${addDaysTo(monday, 7)}T00:00`, timeZone),
-      }
-    : null
+  const days = weekDays(monday)
+  const range = location ? weekRange(monday, timeZone) : null
 
   const schedule = useResourceSchedule(
     resource.id,
@@ -120,15 +90,8 @@ export function AvailabilityTab({
 
   const setWeek = (value: string) => setState({ week: value === currentMonday ? null : value })
 
-  const toDaySpans = (spans: TimeSpan[] | undefined, prefix: string): DaySpan[] =>
-    (spans ?? []).map((s, i) => ({
-      key: `${prefix}-${i}-${s.starts_at}`,
-      start: zonedWallDate(s.starts_at, timeZone),
-      end: zonedWallDate(s.ends_at, timeZone),
-      minutes: spanMinutes(s.starts_at, s.ends_at),
-    }))
-  const open = toDaySpans(schedule.data, "open")
-  const booked = toDaySpans(fullyBooked.data, "booked")
+  const open = toDaySpans(schedule.data, "open", timeZone)
+  const booked = toDaySpans(fullyBooked.data, "booked", timeZone)
 
   const timeline: TimelineSpan[] = [
     ...open.map((s) => ({ ...s, tone: "available" as const, label: `Open · ${describeSpan(s.start, s.end, true)}` })),
@@ -140,7 +103,7 @@ export function AvailabilityTab({
   ]
 
   const weekStart = wallMinutes(days[0])
-  const dayIndex = (span: DaySpan) => Math.min(6, Math.max(0, Math.floor((wallMinutes(span.start) - weekStart) / 1440)))
+  const dayIndex = (span: DaySpan) => dayIndexOf(span, weekStart)
   const openMinutes = open.reduce((sum, s) => sum + s.minutes, 0)
   const bookedMinutes = booked.reduce((sum, s) => sum + s.minutes, 0)
   const openDays = new Set(open.map(dayIndex)).size
@@ -149,6 +112,11 @@ export function AvailabilityTab({
   const fetching = schedule.isFetching || fullyBooked.isFetching
   const hasData = schedule.data !== undefined && fullyBooked.data !== undefined
   const error = schedule.error ?? fullyBooked.error
+  // Both requests can fail at once; reload each one that did.
+  const retry = () => {
+    if (schedule.error) void schedule.refetch()
+    if (fullyBooked.error) void fullyBooked.refetch()
+  }
 
   if (!loading && !locations.data?.length) {
     return (
@@ -186,6 +154,7 @@ export function AvailabilityTab({
             size="sm"
             value={locationId}
             placeholder={loading ? "Loading…" : "Select location…"}
+            aria-label="Location"
             onChange={(id) => id && setState({ location: id })}
           />
         </div>
@@ -201,7 +170,7 @@ export function AvailabilityTab({
           </Button>
         </div>
         <span className="text-sm font-medium tabular-nums">
-          {format(days[0], "d MMM")} – {format(days[6], "d MMM yyyy")}
+          {weekLabel(days)}
         </span>
         <label className="flex items-center gap-2 text-sm sm:ml-auto">
           <Switch
@@ -213,7 +182,7 @@ export function AvailabilityTab({
         </label>
       </div>
 
-      {error ? <ErrorAlert error={error} onRetry={() => (schedule.error ? schedule.refetch() : fullyBooked.refetch())} /> : null}
+      {error ? <ErrorAlert error={error} onRetry={retry} /> : null}
 
       <SectionCard
         title="Week overview"

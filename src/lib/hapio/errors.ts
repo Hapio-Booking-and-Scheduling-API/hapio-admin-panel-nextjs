@@ -49,14 +49,21 @@ const STATUS_HINTS: Record<number, string> = {
   503: "Hapio is temporarily unavailable.",
 }
 
+/** Laravel's stock messages, which say less than the hints above. */
+const GENERIC_MESSAGES = new Set(["unauthenticated.", "not found.", "not found"])
+
 /** A human-readable one-liner for toasts and alerts. */
 export function describeError(error: unknown): string {
   if (isHapioError(error)) {
     if (error.isNotConfigured) return error.message
-    const hint = STATUS_HINTS[error.status]
     if (error.status === 422) return error.message || "Validation failed."
-    if (hint && (!error.message || error.message === "Unauthenticated.")) return hint
-    return error.message || hint || `Request failed (${error.status}).`
+    const hint = STATUS_HINTS[error.status]
+    const message = error.message.trim()
+    if (!hint) return message || `Request failed (${error.status}).`
+    if (!message || message === hint || GENERIC_MESSAGES.has(message.toLowerCase())) return hint
+    // Hapio's 403 messages ("This action is unauthorized.") never say what to fix.
+    if (error.status === 403) return `${/[.!?]$/.test(message) ? message : `${message}.`} ${hint}`
+    return message
   }
   if (error instanceof Error) return error.message
   return "Something went wrong."
@@ -65,6 +72,9 @@ export function describeError(error: unknown): string {
 /**
  * Copies 422 field errors onto a react-hook-form instance.
  * `fieldMap` translates API keys to form field names where they differ.
+ * A nested API key (`resource_selection_priority.0`, `metadata.customer`) whose root is a
+ * known field is shown on that field, because the form renders one message per field.
+ * Nested targets produced by `fieldMap` (`start_times.monday`) are kept as they are.
  * Returns the messages that couldn't be attached to a known field.
  */
 export function applyValidationErrors<T extends FieldValues>(
@@ -75,16 +85,23 @@ export function applyValidationErrors<T extends FieldValues>(
 ): string[] {
   if (!isHapioError(error) || !error.errors) return []
 
+  const byField = new Map<string, string[]>()
   const unmatched: string[] = []
   for (const [apiKey, messages] of Object.entries(error.errors)) {
-    const field = fieldMap[apiKey] ?? apiKey
-    const message = messages.join(" ")
+    const mapped = fieldMap[apiKey]
+    const field = mapped ?? apiKey
     const root = field.split(".")[0]
-    if (knownFields.includes(field) || knownFields.includes(root)) {
-      setError(field as Path<T>, { type: "server", message })
+    let target: string | undefined
+    if (knownFields.includes(field)) target = field
+    else if (knownFields.includes(root)) target = mapped !== undefined ? field : root
+    if (target === undefined) {
+      unmatched.push(messages.join(" "))
     } else {
-      unmatched.push(message)
+      byField.set(target, [...(byField.get(target) ?? []), ...messages])
     }
+  }
+  for (const [field, messages] of byField) {
+    setError(field as Path<T>, { type: "server", message: messages.join(" ") })
   }
   return unmatched
 }

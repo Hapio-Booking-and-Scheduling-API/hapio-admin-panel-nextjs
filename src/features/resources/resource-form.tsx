@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
-import { z } from "zod"
+import { toast } from "sonner"
 
 import { FormDialog } from "@/components/form/form-dialog"
 import { FormField } from "@/components/form/form-field"
@@ -12,51 +12,12 @@ import { FormSection } from "@/components/form/form-section"
 import { JsonEditor } from "@/components/inputs/json-editor"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { metadataToText } from "@/lib/format/json"
-import { metadataText, pickDirty, textToMetadata } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
 import { applyValidationErrors } from "@/lib/hapio/errors"
 import { toastUnlessFieldErrors, useHapioMutation } from "@/lib/hapio/hooks"
-import type { Resource, ResourceInput } from "@/lib/hapio/types"
+import type { Resource } from "@/lib/hapio/types"
 
-const schema = z.object({
-  name: z.string().trim().min(1, "Required").max(100, "At most 100 characters"),
-  /** null = unlimited; otherwise the number as typed. */
-  max_simultaneous_bookings: z
-    .string()
-    .nullable()
-    .refine((v) => v === null || /^\d+$/.test(v.trim()), "Enter a whole number")
-    .refine((v) => v === null || !/^\d+$/.test(v.trim()) || Number(v) >= 1, "Must be at least 1"),
-  enabled: z.boolean(),
-  metadata: metadataText(),
-  protected_metadata: metadataText(),
-})
-type Values = z.infer<typeof schema>
-const FIELDS = Object.keys(schema.shape)
-
-function toValues(resource?: Resource): Values {
-  const max = resource?.max_simultaneous_bookings
-  return {
-    name: resource?.name ?? "",
-    max_simultaneous_bookings: max === null || max === undefined ? null : String(max),
-    enabled: resource?.enabled ?? true,
-    metadata: metadataToText(resource?.metadata),
-    protected_metadata: metadataToText(resource?.protected_metadata),
-  }
-}
-
-function toBody(values: Partial<Values>): Partial<ResourceInput> {
-  const body: Partial<ResourceInput> = {}
-  if (values.name !== undefined) body.name = values.name
-  if (values.max_simultaneous_bookings !== undefined)
-    body.max_simultaneous_bookings =
-      values.max_simultaneous_bookings === null ? null : Number(values.max_simultaneous_bookings)
-  if (values.enabled !== undefined) body.enabled = values.enabled
-  if (values.metadata !== undefined) body.metadata = textToMetadata(values.metadata)
-  if (values.protected_metadata !== undefined)
-    body.protected_metadata = textToMetadata(values.protected_metadata)
-  return body
-}
+import { FIELDS, schema, toCreateBody, toPatchBody, toValues, type Values } from "./resource-form-model"
 
 export function ResourceFormDialog({
   open,
@@ -73,26 +34,31 @@ export function ResourceFormDialog({
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     values: toValues(resource),
-    resetOptions: { keepDirtyValues: false },
+    // A refetch of the resource updates the untouched fields but keeps what the user typed.
+    resetOptions: { keepDirtyValues: true },
   })
 
   // Read during render so react-hook-form tracks dirty state.
   const { dirtyFields } = form.formState
 
+  /** Closes the dialog with a clean form that shows `next` when it opens again. */
+  const close = (next: Resource | undefined) => {
+    form.reset(toValues(next), { keepDirtyValues: false })
+    setFormErrors([])
+    onOpenChange(false)
+  }
+
   const mutation = useHapioMutation(
     async (values: Values) => {
-      if (resource) {
-        return hapio.resources.patch(resource.id, toBody(pickDirty(values, dirtyFields)))
-      }
-      const body = toBody(values) as ResourceInput
-      if (!values.protected_metadata) delete body.protected_metadata
-      return hapio.resources.create(body)
+      if (resource) return hapio.resources.patch(resource.id, toPatchBody(values, dirtyFields))
+      return hapio.resources.create(toCreateBody(values))
     },
     {
       success: resource ? "Resource updated" : "Resource created",
       toastErrors: toastUnlessFieldErrors,
       onSuccess: (saved) => {
-        onOpenChange(false)
+        // The create dialog stays mounted in the kept-alive list, so start it over.
+        close(resource ? saved : undefined)
         if (!resource) router.push(`/resources/${saved.id}`)
       },
       onError: (error) => setFormErrors(applyValidationErrors(error, form.setError, FIELDS)),
@@ -102,13 +68,7 @@ export function ResourceFormDialog({
   return (
     <FormDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          form.reset(toValues(resource))
-          setFormErrors([])
-        }
-        onOpenChange(next)
-      }}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close(resource))}
       title={resource ? "Edit resource" : "New resource"}
       description="Resources are the people, rooms or equipment that bookings are made with."
       submitLabel={resource ? "Save changes" : "Create resource"}
@@ -117,6 +77,11 @@ export function ResourceFormDialog({
       size="lg"
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
+        if (resource && Object.keys(toPatchBody(values, dirtyFields)).length === 0) {
+          toast.info("No changes to save")
+          close(resource)
+          return
+        }
         mutation.mutate(values)
       })}
     >

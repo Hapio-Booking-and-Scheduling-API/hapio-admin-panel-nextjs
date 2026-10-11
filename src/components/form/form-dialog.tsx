@@ -77,8 +77,8 @@ export function FormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending}>
-              {pending && <Spinner />}
+            <Button type="submit" disabled={pending} aria-busy={pending}>
+              {pending && <Spinner aria-hidden />}
               {submitLabel}
             </Button>
           </DialogFooter>

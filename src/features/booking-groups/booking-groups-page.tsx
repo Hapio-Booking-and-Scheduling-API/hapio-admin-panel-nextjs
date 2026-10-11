@@ -31,6 +31,7 @@ import { hapio } from "@/lib/hapio/client"
 import { useBookingGroups, useHapioMutation } from "@/lib/hapio/hooks"
 import type { BookingGroup } from "@/lib/hapio/types"
 
+
 function Names({ names }: { names: string[] }) {
   if (!names.length) return <span className="text-muted-foreground">—</span>
   const shown = names.slice(0, 2).join(", ")
@@ -79,6 +80,7 @@ export function BookingGroupsPage() {
     {
       id: "span",
       header: "Span",
+      // Hapio sorts groups by their bookings' times (same sort enum as bookings).
       sortKey: "starts_at",
       cell: (g) => {
         const span = groupSpan(g.bookings)
@@ -199,9 +201,13 @@ export function BookingGroupsPage() {
         open={!!deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Delete group ${deleting ? shortId(deleting.id) : ""}?`}
-        description={`This permanently deletes the group and ${
-          deletingCount === 1 ? "its 1 booking" : `all ${deletingCount} of its bookings`
-        }. This can't be undone.`}
+        description={
+          deletingCount
+            ? `This permanently deletes the group and ${
+                deletingCount === 1 ? "its 1 booking" : `all ${deletingCount} of its bookings`
+              }. This can't be undone.`
+            : "This permanently deletes the group. It has no bookings. This can't be undone."
+        }
         confirmLabel={deletingCount ? "Delete group and bookings" : "Delete group"}
         destructive
         onConfirm={() => remove.mutateAsync(deleting!.id)}

@@ -2,6 +2,7 @@
 
 import { useId } from "react"
 
+import { labelIdFor } from "@/components/form/form-field"
 import { DurationInput } from "@/components/inputs/duration-input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -32,7 +33,7 @@ export function OptionalDuration({
 }) {
   const switchId = useId()
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" role="group" aria-labelledby={id ? labelIdFor(id) : undefined}>
       <div className="flex items-center gap-2">
         <Switch
           id={switchId}

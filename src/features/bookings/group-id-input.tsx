@@ -1,6 +1,6 @@
 "use client"
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { keepPreviousData } from "@tanstack/react-query"
 import { ChevronDownIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -19,6 +19,7 @@ import { hapio, type BookingGroupListParams } from "@/lib/hapio/client"
 import { hapioKey } from "@/lib/hapio/hooks"
 
 import { groupSpan, shortId, uniqueNames } from "./utils"
+import { useHapioQuery } from "@/lib/hapio/use-hapio-query"
 
 const RECENT_PARAMS: BookingGroupListParams = {
   per_page: 25,
@@ -45,7 +46,7 @@ export function BookingGroupIdInput({
   exclude?: string
 }) {
   const [open, setOpen] = useState(false)
-  const recent = useQuery({
+  const recent = useHapioQuery({
     queryKey: hapioKey("booking-groups", "list", RECENT_PARAMS),
     queryFn: ({ signal }) => hapio.bookingGroups.list(RECENT_PARAMS, signal),
     enabled: open,

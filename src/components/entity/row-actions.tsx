@@ -20,7 +20,8 @@ export interface RowAction {
   separatorBefore?: boolean
 }
 
-export function RowActions({ actions, label = "Actions" }: { actions: RowAction[]; label?: string }) {
+/** `label` names the trigger, e.g. "Actions for Stockholm Studio", so each row's menu is distinguishable. */
+export function RowActions({ actions, label }: { actions: RowAction[]; label: string }) {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
