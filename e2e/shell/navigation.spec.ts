@@ -4,6 +4,7 @@ import { breadcrumbs, navLink, sidebar } from "./_helpers"
 
 const NAV = [
   { title: "Dashboard", href: "/", heading: "Dashboard", proof: `Project: ${SEED.project}` },
+  { title: "Calendar", href: "/calendar", heading: "Calendar", proof: `Bookings at ${SEED.locations.stockholm.name}` },
   { title: "Bookings", href: "/bookings", heading: "Bookings", proof: "Studio rental" },
   { title: "Booking groups", href: "/booking-groups", heading: "Booking groups", proof: "2 confirmed" },
   { title: "Locations", href: "/locations", heading: "Locations", proof: SEED.locations.newYork.name },
@@ -150,6 +151,7 @@ test.describe("breadcrumbs", () => {
 test.describe("document titles", () => {
   for (const [path, title] of [
     ["/", "Hapio Admin"],
+    ["/calendar", "Calendar · Hapio Admin"],
     ["/bookings", "Bookings · Hapio Admin"],
     ["/bookings/new", "New booking · Hapio Admin"],
     ["/booking-groups", "Booking groups · Hapio Admin"],

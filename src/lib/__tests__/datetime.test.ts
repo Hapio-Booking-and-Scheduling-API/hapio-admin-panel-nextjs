@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   browserTimeZone,
+  dateIn,
   dayRange,
   formatDate,
   formatDateTime,
@@ -11,6 +12,7 @@ import {
   shortTime,
   todayIn,
   toHapioDateTime,
+  toHapioTimestamp,
   toWallTime,
   wallAt,
   wallDate,
@@ -95,6 +97,25 @@ describe("toHapioDateTime", () => {
     // Either side of the overlap is unambiguous.
     expect(toHapioDateTime("2026-10-25T01:59", "Europe/Stockholm")).toBe("2026-10-25T01:59:00+02:00")
     expect(toHapioDateTime("2026-10-25T03:00", "Europe/Stockholm")).toBe("2026-10-25T03:00:00+01:00")
+  })
+})
+
+describe("toHapioTimestamp / dateIn", () => {
+  it("writes an instant with the zone's offset at that instant", () => {
+    expect(toHapioTimestamp(new Date("2026-10-23T15:00:00Z"), "Europe/Stockholm")).toBe("2026-10-23T17:00:00+02:00")
+    expect(toHapioTimestamp(Date.parse("2026-10-26T16:00:00Z"), "Europe/Stockholm")).toBe("2026-10-26T17:00:00+01:00")
+    expect(toHapioTimestamp(Date.parse("2026-11-02T15:00:00Z"), "America/New_York")).toBe("2026-11-02T10:00:00-05:00")
+  })
+
+  it("falls back to the browser's zone", () => {
+    expect(toHapioTimestamp(Date.parse("2026-10-23T15:00:00Z"))).toBe("2026-10-23T17:00:00+02:00")
+  })
+
+  it("gives the date of an instant in a zone", () => {
+    const instant = new Date("2026-10-19T03:00:00Z")
+    expect(dateIn(instant, "Europe/Stockholm")).toBe("2026-10-19")
+    expect(dateIn(instant, "America/New_York")).toBe("2026-10-18")
+    expect(dateIn(instant.getTime())).toBe("2026-10-19")
   })
 })
 

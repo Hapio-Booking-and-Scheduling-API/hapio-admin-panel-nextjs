@@ -72,6 +72,16 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
 - **Times use the location's time zone.** Hapio interprets dates and times in the location's
   time zone, and timestamps carry offsets. Date/time inputs edit wall time in that zone.
 - **Filters live in the URL**, so filtered views can be bookmarked and shared.
+- **The calendar uses FullCalendar v7** with its shadcn "monarch" theme, installed from the
+  `@fullcalendar` shadcn registry: `src/components/event-calendar*.tsx`,
+  `src/components/resource-timeline.tsx` and `src/components/ui/{event-calendar,scheduler}-views.tsx`.
+  One local change: the toolbar's view switcher is a toggle group instead of tabs without
+  panels, so reinstalling the registry items would undo it. Week, day, month and list views
+  are free. The **Resources** layout (one row per resource) uses FullCalendar Scheduler, a paid
+  add-on: it only appears, and its code is only downloaded, when
+  `NEXT_PUBLIC_FULLCALENDAR_LICENSE_KEY` is set at build time. End-to-end builds always set a
+  placeholder key, so the tests cover that layout (FullCalendar shows an "invalid license"
+  notice there).
 
 ## Scripts
 

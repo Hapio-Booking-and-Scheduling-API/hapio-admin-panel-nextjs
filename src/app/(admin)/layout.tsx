@@ -11,7 +11,7 @@ export default function AdminLayout({ children }: LayoutProps<"/">) {
     <BreadcrumbProvider>
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset>
+        <SidebarInset className="min-w-0">
           <SiteHeader />
           <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
             <Suspense>

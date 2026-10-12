@@ -115,6 +115,7 @@ test.describe("mobile: lists", () => {
 test.describe("mobile: no horizontal overflow", () => {
   for (const [path, ready] of [
     ["/", (page: Page) => main(page).getByText(`Project: ${SEED.project}`)],
+    ["/calendar", (page: Page) => main(page).getByRole("link", { name: /Haircut · Anna$/ }).first()],
     ["/bookings", (page: Page) => main(page).getByRole("table").getByText("Studio rental").first()],
     // The Status column ("2 confirmed") is hidden below 640 px; the row actions aren't.
     ["/booking-groups", (page: Page) => main(page).getByRole("table").getByRole("button", { name: /^Actions for group / }).first()],

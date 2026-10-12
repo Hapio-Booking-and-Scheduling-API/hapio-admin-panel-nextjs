@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/breadcrumb"
 
 const SEGMENT_LABELS: Record<string, string> = {
+  calendar: "Calendar",
   bookings: "Bookings",
   "booking-groups": "Booking groups",
   locations: "Locations",

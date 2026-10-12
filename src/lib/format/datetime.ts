@@ -7,6 +7,9 @@ import { addDays, format, isValid, parseISO } from "date-fns"
 
 const WALL_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/
 
+/** date-fns pattern of a Hapio timestamp: `YYYY-MM-DDThh:mm:ss±hh:mm`. */
+export const HAPIO_TIMESTAMP_FORMAT = "yyyy-MM-dd'T'HH:mm:ssxxx"
+
 /**
  * CLDR, and so V8/ICU, still uses the old names of these zones, while Hapio and the IANA
  * database use the current ones (Asia/Kolkata, Europe/Kyiv, …).
@@ -55,7 +58,17 @@ export function toHapioDateTime(wall: string, timeZone?: string | null): string 
   if (!m) return wall
   const [, y, mo, d, h = "00", mi = "00", s = "00"] = m
   const date = new TZDate(+y, +mo - 1, +d, +h, +mi, +s, timeZone || browserTimeZone())
-  return format(date, "yyyy-MM-dd'T'HH:mm:ssxxx")
+  return format(date, HAPIO_TIMESTAMP_FORMAT)
+}
+
+/** An instant → Hapio timestamp, with the zone's offset at that instant. */
+export function toHapioTimestamp(instant: Date | number, timeZone?: string | null): string {
+  return format(new TZDate(instant.valueOf(), timeZone || browserTimeZone()), HAPIO_TIMESTAMP_FORMAT)
+}
+
+/** The date (`YYYY-MM-DD`) of an instant in a time zone. */
+export function dateIn(instant: Date | number, timeZone?: string | null): string {
+  return format(new TZDate(instant.valueOf(), timeZone || browserTimeZone()), "yyyy-MM-dd")
 }
 
 /** Hapio timestamp → wall time for `<input type="datetime-local">` (`YYYY-MM-DDTHH:mm`). */
@@ -115,7 +128,7 @@ export function formatDate(value: string | null | undefined): string {
 
 /** Today's date (`YYYY-MM-DD`) in a time zone. */
 export function todayIn(timeZone?: string | null): string {
-  return format(new TZDate(Date.now(), timeZone || browserTimeZone()), "yyyy-MM-dd")
+  return dateIn(Date.now(), timeZone)
 }
 
 /** Wall-time string `YYYY-MM-DDTHH:mm` for "now + days" at a given hour, in a zone. */

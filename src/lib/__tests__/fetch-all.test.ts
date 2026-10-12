@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { fetchAll, MAX_PAGES } from "@/lib/hapio/fetch-all"
+import { CONCURRENCY, fetchAll, fetchPages, inBatches, MAX_PAGES } from "@/lib/hapio/fetch-all"
 import type { Paginated } from "@/lib/hapio/types"
 
 function page(n: number, lastPage: number, perPage = 2): Paginated<string> {
@@ -72,5 +72,78 @@ describe("fetchAll", () => {
     })
     await expect(fetchAll(load)).rejects.toBe(error)
     expect(load).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("inBatches", () => {
+  it("runs a few at a time and keeps the results in order", async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const run = vi.fn(async (n: number) => {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 10 - n))
+      inFlight--
+      return n * 10
+    })
+    await expect(inBatches([1, 2, 3, 4, 5], 2, run)).resolves.toEqual([10, 20, 30, 40, 50])
+    expect(maxInFlight).toBe(2)
+  })
+
+  it("handles no items", async () => {
+    await expect(inBatches([], 4, async (n: number) => n)).resolves.toEqual([])
+  })
+})
+
+describe("fetchPages", () => {
+  it("returns a single page without further requests", async () => {
+    const load = loader(1)
+    await expect(fetchPages(load)).resolves.toEqual({ items: ["p1-0", "p1-1"], total: 2, truncated: false })
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it("loads the pages after the first a few at a time, in order", async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const load = vi.fn(async (n: number) => {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 12 - n))
+      inFlight--
+      return page(n, 10)
+    })
+    const { items, truncated } = await fetchPages(load)
+    expect(items).toHaveLength(20)
+    expect(items.slice(0, 4)).toEqual(["p1-0", "p1-1", "p2-0", "p2-1"])
+    expect(items.at(-1)).toBe("p10-1")
+    expect(truncated).toBe(false)
+    expect(maxInFlight).toBe(CONCURRENCY)
+  })
+
+  it(`reports when it stops after MAX_PAGES (${MAX_PAGES}) pages`, async () => {
+    const load = loader(35)
+    const result = await fetchPages(load)
+    expect(load).toHaveBeenCalledTimes(MAX_PAGES)
+    expect(result.items).toHaveLength(40)
+    expect(result.total).toBe(70)
+    expect(result.truncated).toBe(true)
+  })
+
+  it("takes a lower page limit and passes the signal on", async () => {
+    const controller = new AbortController()
+    const load = loader(5)
+    const result = await fetchPages(load, { signal: controller.signal, maxPages: 2 })
+    expect(load.mock.calls.map(([n]) => n)).toEqual([1, 2])
+    expect(result).toMatchObject({ total: 10, truncated: true })
+    for (const [, signal] of load.mock.calls) expect(signal).toBe(controller.signal)
+  })
+
+  it("rejects when a later page fails", async () => {
+    const error = new Error("page 3 failed")
+    const load = vi.fn(async (n: number) => {
+      if (n === 3) throw error
+      return page(n, 4)
+    })
+    await expect(fetchPages(load)).rejects.toBe(error)
   })
 })

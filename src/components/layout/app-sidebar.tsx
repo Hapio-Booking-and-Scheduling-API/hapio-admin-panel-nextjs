@@ -3,6 +3,7 @@
 import {
   BoxesIcon,
   CalendarCheckIcon,
+  CalendarDaysIcon,
   FolderKanbanIcon,
   LayoutDashboardIcon,
   MapPinIcon,
@@ -39,6 +40,7 @@ const NAV = [
   {
     label: "Bookings",
     items: [
+      { title: "Calendar", href: "/calendar", icon: CalendarDaysIcon },
       { title: "Bookings", href: "/bookings", icon: CalendarCheckIcon },
       { title: "Booking groups", href: "/booking-groups", icon: BoxesIcon },
     ],

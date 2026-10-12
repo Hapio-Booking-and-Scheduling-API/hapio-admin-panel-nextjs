@@ -29,9 +29,10 @@ interface EntityComboboxProps {
 }
 
 function useEntityOptions(kind: EntityKind) {
-  const locations = useAllLocations()
-  const resources = useAllResources()
-  const services = useAllServices()
+  // Only load the list this picker shows.
+  const locations = useAllLocations({ enabled: kind === "location" })
+  const resources = useAllResources({ enabled: kind === "resource" })
+  const services = useAllServices({ enabled: kind === "service" })
 
   const query = kind === "location" ? locations : kind === "resource" ? resources : services
   const options = useMemo(() => {

@@ -4,7 +4,7 @@
 import { TZDate } from "@date-fns/tz"
 import { addDays, format, parseISO } from "date-fns"
 
-import { todayIn } from "@/lib/format/datetime"
+import { toHapioTimestamp, todayIn } from "@/lib/format/datetime"
 import { durationToMinutes, formatDuration, humanizeDuration } from "@/lib/format/duration"
 import type { AnyBookableSlot, BookableSlotFlexible, Service } from "@/lib/hapio/types"
 
@@ -22,7 +22,7 @@ export function presetRange(preset: Preset, timeZone: string) {
 }
 
 /** Hapio timestamp of an instant, in the location's zone. */
-export const toZoned = (time: number, timeZone: string) => format(new TZDate(time, timeZone), "yyyy-MM-dd'T'HH:mm:ssxxx")
+export const toZoned = (time: number, timeZone: string) => toHapioTimestamp(time, timeZone)
 
 export function lengthLabel(ms: number) {
   const minutes = Math.round(ms / 60_000)

@@ -138,7 +138,7 @@ test.describe("sidebar", () => {
     await expect(container(page)).toHaveAttribute("data-state", "collapsed")
     await expectRail(page)
     const hits: Record<string, string | null> = {}
-    for (const title of ["Dashboard", "Bookings", "Booking groups", "Locations", "Resources", "Services", "Project"]) {
+    for (const title of ["Dashboard", "Calendar", "Bookings", "Booking groups", "Locations", "Resources", "Services", "Project"]) {
       const box = (await navLink(page, title).boundingBox())!
       hits[title] = await page.evaluate(
         ([x, y]) => document.elementFromPoint(x, y)?.closest("a")?.getAttribute("href") ?? null,
@@ -147,6 +147,7 @@ test.describe("sidebar", () => {
     }
     expect(hits).toEqual({
       Dashboard: "/",
+      Calendar: "/calendar",
       Bookings: "/bookings",
       "Booking groups": "/booking-groups",
       Locations: "/locations",

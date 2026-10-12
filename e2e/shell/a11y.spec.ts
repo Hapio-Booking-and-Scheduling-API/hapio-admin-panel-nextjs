@@ -4,6 +4,7 @@ import { SEED } from "../fixtures/seed"
 import { expect, test } from "../fixtures/test"
 import type { Ui } from "../helpers/ui"
 import { expectAccessible } from "../helpers/a11y"
+import { fixDateSubclassing } from "../resources/_helpers"
 
 // axe (WCAG 2.1 A/AA, serious + critical) on every page and the main dialogs, after the
 // page has rendered API data. Violations found here are bugs, not rules to disable.
@@ -105,6 +106,41 @@ test.describe("a11y: pages", () => {
     await expect(page.locator('[data-slot="sidebar"]').getByText(SEED.project)).toBeVisible()
     await expect(ui.heading("New booking group")).toBeVisible()
     await expectAccessible(page)
+  })
+
+  for (const scheme of ["light", "dark"] as const) {
+    test(`calendar week with canceled bookings and open time (${scheme})`, async ({ page, api }) => {
+      await page.emulateMedia({ colorScheme: scheme })
+      await fixDateSubclassing(page)
+      const anna = await api.idOf("resources", SEED.resources.anna.name)
+      await page.goto(`/calendar?canceled=true&availability=true&resource=${anna}`)
+      await expect(main(page).getByRole("link", { name: /Canceled: Haircut · Anna$/ })).toBeVisible()
+      await expect(main(page).getByRole("img", { name: /^Open · / }).first()).toBeVisible()
+      await expectAccessible(page)
+    })
+  }
+
+  test("calendar list and month views", async ({ page }) => {
+    await fixDateSubclassing(page)
+    await page.goto("/calendar?view=listWeek&canceled=true")
+    await expect(main(page).getByRole("list", { name: "Events" }).first()).toBeVisible()
+    await expectAccessible(page)
+    await page.getByRole("radio", { name: "Month view" }).click()
+    await expect(main(page).getByText("October 2026", { exact: true })).toBeVisible()
+    await expectAccessible(page)
+  })
+
+  test("calendar Resources layout", async ({ page }) => {
+    await fixDateSubclassing(page)
+    await page.goto("/calendar?view=resourceTimelineWeek&availability=true")
+    // Rows are empty elements that own their cells (aria-owns): check the name, not visibility.
+    await expect(main(page).getByRole("row", { name: /^Anna Open · / })).toHaveCount(1)
+    await expect(main(page).getByRole("link", { name: "Haircut", exact: true }).first()).toBeVisible()
+    // Two findings come from FullCalendar Scheduler's own timeline markup, not the panel:
+    // - its rows own their cells through aria-owns, which axe doesn't follow (the browser's tree
+    //   is right: e2e/calendar/calendar.spec.ts checks each row's name and contents);
+    // - the timeline header scrolls along with the body but holds nothing focusable.
+    await expectAccessible(page, { disable: ["aria-required-children", "scrollable-region-focusable"] })
   })
 
   test("dark theme dashboard", async ({ page, ui }) => {

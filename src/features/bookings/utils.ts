@@ -8,7 +8,15 @@ import {
   TIMESTAMP_FILTER_FIELDS,
   type FilterFieldDef,
 } from "@/components/filters/advanced-filters-model"
-import { browserTimeZone, formatDateTime, toHapioDateTime, toWallTime, wallDate } from "@/lib/format/datetime"
+import {
+  browserTimeZone,
+  formatDateTime,
+  HAPIO_TIMESTAMP_FORMAT,
+  toHapioDateTime,
+  toHapioTimestamp,
+  toWallTime,
+  wallDate,
+} from "@/lib/format/datetime"
 import { parseDuration } from "@/lib/format/duration"
 import type {
   Booking,
@@ -20,8 +28,6 @@ import type {
   Service,
   Uuid,
 } from "@/lib/hapio/types"
-
-const HAPIO_FORMAT = "yyyy-MM-dd'T'HH:mm:ssxxx"
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -182,14 +188,14 @@ export function addIsoDuration(iso: string, duration: string, timeZone?: string 
   if (!parts) return null
   const date = new TZDate(iso, timeZone || browserTimeZone())
   if (!isValid(date)) return null
-  return format(add(date, parts), HAPIO_FORMAT)
+  return format(add(date, parts), HAPIO_TIMESTAMP_FORMAT)
 }
 
 /** Shifts a timestamp by `ms`, expressed in `timeZone`. */
 export function shiftTimestamp(iso: string, ms: number, timeZone?: string | null): string | null {
   const t = instant(iso)
   if (!Number.isFinite(t) || !Number.isFinite(ms)) return null
-  return format(new TZDate(t + ms, timeZone || browserTimeZone()), HAPIO_FORMAT)
+  return toHapioTimestamp(t + ms, timeZone)
 }
 
 /** Keeps the wall time of a timestamp but moves it to another zone (e.g. when the location changes). */

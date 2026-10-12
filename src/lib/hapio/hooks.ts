@@ -168,7 +168,7 @@ export function useBookingGroup(id: Uuid | null | undefined) {
 // ---------------------------------------------------------------------------
 // "All" lists for pickers (see fetch-all.ts).
 
-export function useAllLocations() {
+export function useAllLocations(options: { enabled?: boolean } = {}) {
   return useHapioQuery({
     queryKey: hapioKey("locations", "all"),
     queryFn: ({ signal }) =>
@@ -177,10 +177,11 @@ export function useAllLocations() {
         signal
       ),
     staleTime: 60_000,
+    enabled: options.enabled,
   })
 }
 
-export function useAllResources() {
+export function useAllResources(options: { enabled?: boolean } = {}) {
   return useHapioQuery({
     queryKey: hapioKey("resources", "all"),
     queryFn: ({ signal }) =>
@@ -189,10 +190,11 @@ export function useAllResources() {
         signal
       ),
     staleTime: 60_000,
+    enabled: options.enabled,
   })
 }
 
-export function useAllServices() {
+export function useAllServices(options: { enabled?: boolean } = {}) {
   return useHapioQuery({
     queryKey: hapioKey("services", "all"),
     queryFn: ({ signal }) =>
@@ -201,6 +203,7 @@ export function useAllServices() {
         signal
       ),
     staleTime: 60_000,
+    enabled: options.enabled,
   })
 }
 
