@@ -122,25 +122,12 @@ test.describe("a11y: pages", () => {
 
   test("calendar list and month views", async ({ page }) => {
     await fixDateSubclassing(page)
-    await page.goto("/calendar?view=listWeek&canceled=true")
+    await page.goto("/calendar?view=list&canceled=true")
     await expect(main(page).getByRole("list", { name: "Events" }).first()).toBeVisible()
     await expectAccessible(page)
     await page.getByRole("radio", { name: "Month view" }).click()
     await expect(main(page).getByText("October 2026", { exact: true })).toBeVisible()
     await expectAccessible(page)
-  })
-
-  test("calendar Resources layout", async ({ page }) => {
-    await fixDateSubclassing(page)
-    await page.goto("/calendar?view=resourceTimelineWeek&availability=true")
-    // Rows are empty elements that own their cells (aria-owns): check the name, not visibility.
-    await expect(main(page).getByRole("row", { name: /^Anna Open · / })).toHaveCount(1)
-    await expect(main(page).getByRole("link", { name: "Haircut", exact: true }).first()).toBeVisible()
-    // Two findings come from FullCalendar Scheduler's own timeline markup, not the panel:
-    // - its rows own their cells through aria-owns, which axe doesn't follow (the browser's tree
-    //   is right: e2e/calendar/calendar.spec.ts checks each row's name and contents);
-    // - the timeline header scrolls along with the body but holds nothing focusable.
-    await expectAccessible(page, { disable: ["aria-required-children", "scrollable-region-focusable"] })
   })
 
   test("dark theme dashboard", async ({ page, ui }) => {

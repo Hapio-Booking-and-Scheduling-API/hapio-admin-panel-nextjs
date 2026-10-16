@@ -6,7 +6,7 @@ import { fixDateSubclassing } from "../resources/_helpers"
 import { navLink } from "../shell/_helpers"
 
 const { stockholm, newYork } = SEED.locations
-const { anna, ben, roomA } = SEED.resources
+const { anna } = SEED.resources
 
 // Zone conversions (TZDate) need Date subclassing, which the fake clock breaks.
 test.beforeEach(async ({ page }) => fixDateSubclassing(page))
@@ -28,12 +28,11 @@ function booking(page: Page, time: string, title: string) {
   return main(page).getByRole("link", { name: new RegExp(`^${time}\\b.*${escapeRegExp(title)}$`) })
 }
 
-/** A booking in the list view, where FullCalendar makes each one a list item (with a link). */
+/** A booking in the list view (a link in the "Events" list), by its time and title. */
 function listBooking(page: Page, time: string, title: string) {
   return main(page)
     .getByRole("list", { name: "Events" })
-    .getByRole("listitem")
-    .filter({ hasText: new RegExp(`^${time}\\b.*${escapeRegExp(title)}$`) })
+    .getByRole("link", { name: new RegExp(`^${time}\\b.*${escapeRegExp(title)}$`) })
 }
 
 /** Every booking the calendar shows. */
@@ -124,7 +123,7 @@ test.describe("calendar", () => {
 
     await page.getByRole("radio", { name: "Month view" }).click()
     await expect(main(page).getByText("October 2026", { exact: true })).toBeVisible()
-    await expect.poll(() => urlParam(page, "view")).toBe("dayGridMonth")
+    await expect.poll(() => urlParam(page, "view")).toBe("month")
 
     // A reload restores the view from the URL.
     await page.reload()
@@ -133,7 +132,7 @@ test.describe("calendar", () => {
   })
 
   test("follows a link to the calendar while it's open", async ({ page }) => {
-    await page.goto("/calendar?view=dayGridMonth&date=2026-11-01")
+    await page.goto("/calendar?view=month&date=2026-11-01")
     await expect(main(page).getByText("November 2026", { exact: true })).toBeVisible()
 
     await navLink(page, "Calendar").click()
@@ -225,7 +224,7 @@ test.describe("calendar", () => {
 
   test("says where open time shows, and doesn't load it for the list and month views", async ({ page, api, net }) => {
     const annaId = await api.idOf("resources", anna.name)
-    await page.goto(`/calendar?view=listWeek&availability=true&resource=${annaId}`)
+    await page.goto(`/calendar?view=list&availability=true&resource=${annaId}`)
     await expect(listBooking(page, "09:00", "Haircut · Anna")).toBeVisible()
     await expect(main(page).getByText("Open time shows in the week and day views.")).toBeVisible()
 
@@ -237,13 +236,13 @@ test.describe("calendar", () => {
 
   test("the list view says when it's loading and when a period is empty", async ({ page, net }) => {
     await net.delay("bookings", 1_000, { method: "GET", times: 1 })
-    await page.goto("/calendar?view=listWeek")
+    await page.goto("/calendar?view=list")
     await expect(main(page).getByText("Loading bookings…")).toBeVisible()
     await expect(listBooking(page, "09:00", "Haircut · Anna")).toBeVisible()
     await expect(listBooking(page, "09:30", "Studio rental · Room A")).toHaveAttribute("href", /^\/bookings\//)
     await expect(main(page).getByText("Loading bookings…")).toHaveCount(0)
 
-    await page.goto("/calendar?view=listWeek&date=2026-12-07")
+    await page.goto("/calendar?view=list&date=2026-12-07")
     await expect(main(page).getByText("No bookings in this period")).toBeVisible()
   })
 
@@ -285,61 +284,5 @@ test.describe("calendar", () => {
     await expect(alert).toContainText("This period has 2,500 bookings and the calendar loads the first 4")
     await expect(booking(page, "09:00", "Haircut · Anna")).toBeVisible()
     expect(net.find("GET", "bookings")).toHaveLength(20)
-  })
-})
-
-test.describe("calendar: Resources layout", () => {
-  test("shows a row per resource, with its open time and the week's days", async ({ page, api, net }) => {
-    const stockholmId = await api.idOf("locations", stockholm.name)
-    // Thursday: Erik Lund (Anna, 09:00) and Nora Falk (Ben, 14:00).
-    await page.goto("/calendar?availability=true&date=2026-10-22&view=timeGridDay")
-    await expect(booking(page, "09:00", "Haircut · Anna")).toBeVisible()
-
-    await page.getByRole("radio", { name: "Resources" }).click()
-    await expect.poll(() => urlParam(page, "view")).toBe("resourceTimelineDay")
-    await expect.poll(() => urlParam(page, "date")).toBe("2026-10-22")
-
-    const grid = main(page).getByRole("grid")
-    const rows = grid.getByRole("row", { name: new RegExp(`^(${anna.name}|${ben.name}|${roomA.name})\\b`) })
-    // FullCalendar ties each row's timeline cell to it with aria-owns, so a row's name lists its
-    // open time and bookings. Titles leave out the resource; the timeline shows no times.
-    await expect(rows).toHaveCount(3)
-    await expect(rows.nth(0)).toHaveAccessibleName(`${anna.name} Open · Thu 22 Oct 10:00–17:00 Haircut`)
-    // Nora Falk's 14:00 haircut fully books Ben for an hour.
-    await expect(rows.nth(1)).toHaveAccessibleName(
-      `${ben.name} Open · Thu 22 Oct 09:00–14:00 Open · Thu 22 Oct 15:00–17:00 Haircut`
-    )
-    await expect(rows.nth(2)).toHaveAccessibleName(`${roomA.name} Open · Thu 22 Oct 09:00–17:00`)
-    await expect(grid.getByRole("link", { name: "Haircut", exact: true })).toHaveCount(2)
-
-    // One schedule request per row, for the whole week at this location.
-    await expect.poll(() => net.find("GET", SCHEDULE).length).toBe(3)
-    for (const call of net.find("GET", SCHEDULE)) {
-      expect(call.query).toMatchObject({ location: stockholmId, from: "2026-10-19T00:00:00+02:00", to: "2026-10-26T00:00:00+01:00" })
-    }
-
-    // The week timeline keeps its row of days above the hours.
-    await page.getByRole("radio", { name: "Week view" }).click()
-    await expect(main(page).getByText("Thu 10/22", { exact: true })).toBeVisible()
-    await expect(main(page).getByText("Sun 10/25", { exact: true })).toBeVisible()
-    // Same week, so no new open-time requests.
-    expect(net.find("GET", SCHEDULE)).toHaveLength(3)
-
-    // The timeline scrolls inside the page, not the page itself.
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  })
-
-  test("keeps bookings of disabled and deleted resources in view", async ({ page, api }) => {
-    await api.patch(`resources/${await api.idOf("resources", ben.name)}`, { enabled: false })
-    await api.delete(`resources/${await api.idOf("resources", roomA.name)}`)
-    // Thursday and Friday: Nora Falk (Ben) and Pixel & Co (Room A, now without a resource).
-    await page.goto("/calendar?view=resourceTimelineWeek&date=2026-10-19")
-
-    const grid = main(page).getByRole("grid")
-    const rows = grid.getByRole("row", { name: /^(Anna|Ben \(disabled\)|No resource)(\s|$)/ })
-    await expect(rows).toHaveCount(3)
-    await expect(rows.nth(0)).toHaveAccessibleName(`${anna.name} Haircut`)
-    await expect(rows.nth(1)).toHaveAccessibleName(`${ben.name} (disabled) Haircut`)
-    await expect(rows.nth(2)).toHaveAccessibleName("No resource Studio rental")
   })
 })

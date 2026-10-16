@@ -46,6 +46,50 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-calendar-event: var(--calendar-event);
+  --color-calendar-event-foreground: var(--calendar-event-foreground);
+  --color-calendar-background-event: var(--calendar-background-event);
+  --color-calendar-today: var(--calendar-today);
+  --color-calendar-now: var(--calendar-now);
+  --color-calendar-selection: var(--calendar-selection);
+  --animate-calendar-pending: calendar-pending 1.2s ease-in-out infinite;
+  --calendar-day-min-width: var(--calendar-day-min-width);
+  --calendar-axis-width: var(--calendar-axis-width);
+  --calendar-bar-height: var(--calendar-bar-height);
+  --calendar-slot-height: var(--calendar-slot-height);
+  --calendar-selection: var(--calendar-selection);
+  --calendar-now: var(--calendar-now);
+  --calendar-today: var(--calendar-today);
+  --calendar-background-event: var(--calendar-background-event);
+  --calendar-event-foreground: var(--calendar-event-foreground);
+  --calendar-event: var(--calendar-event);
+  @keyframes calendar-pending {
+  0%, 100% {
+    opacity: 1;
+    }
+  50% {
+    opacity: 0.6;
+    }
+  }
+  @keyframes calendar-pending-stripes {
+  from {
+    background-position: 1rem 0;
+    }
+  to {
+    background-position: 0 0;
+    }
+  }
+  @keyframes calendar-revert {
+  0%, 100% {
+    translate: 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  75% {
+    translate: 3px 0;
+    }
+  }
 }
 
 :root {
@@ -81,6 +125,16 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --calendar-event: var(--primary);
+  --calendar-event-foreground: var(--primary-foreground);
+  --calendar-background-event: var(--chart-3);
+  --calendar-today: var(--chart-1);
+  --calendar-now: var(--destructive);
+  --calendar-selection: color-mix(in oklab, var(--chart-1) 20%, transparent);
+  --calendar-slot-height: 1.75rem;
+  --calendar-bar-height: 1.625rem;
+  --calendar-axis-width: 3.5rem;
+  --calendar-day-min-width: 0px;
 }
 
 .dark {
@@ -115,6 +169,12 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --calendar-event: var(--primary);
+  --calendar-event-foreground: var(--primary-foreground);
+  --calendar-background-event: var(--chart-3);
+  --calendar-today: var(--chart-1);
+  --calendar-now: var(--destructive);
+  --calendar-selection: color-mix(in oklab, var(--chart-1) 20%, transparent);
 }
 
 @layer base {
@@ -128,3 +188,366 @@
     @apply font-sans;
   }
 }
+  @property --event-top {
+    syntax: '*';
+    inherits: false;
+}
+  @property --event-height {
+    syntax: '*';
+    inherits: false;
+}
+  @property --event-inset-start {
+    syntax: '*';
+    inherits: false;
+}
+  @property --event-width {
+    syntax: '*';
+    inherits: false;
+}
+  @property --event-z {
+    syntax: '*';
+    inherits: false;
+}
+  @property --event-level {
+    syntax: '*';
+    inherits: false;
+}
+
+@utility calendar-slot-lines {
+    background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--calendar-slot-height) - 1px), var(--border) calc(var(--calendar-slot-height) - 1px) var(--calendar-slot-height));
+}
+
+@utility calendar-background-fill {
+    background-color: color-mix(in oklab, var(--event-color, var(--calendar-background-event)) 20%, transparent);
+}
+
+@utility calendar-gap-band {
+    background-color: color-mix(in oklab, var(--muted) 60%, transparent);
+    background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--muted-foreground) 35%, transparent) 0 1px, transparent 1px 6px);
+}
+
+@utility calendar-repeated-band {
+    background-color: color-mix(in oklab, var(--calendar-today) 20%, transparent);
+    border-block: 1px dashed color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+}
+
+@utility calendar-selection-rejected {
+    background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--destructive) 40%, transparent) 0 2px, transparent 2px 8px);
+}
+
+@utility calendar-event-movable {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+@layer components {
+  [data-slot=calendar-event]:has(> [data-slot=calendar-resize-handle]) {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  [data-slot=calendar-resize-handle] {
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  [data-variant=column] > [data-slot=calendar-resize-handle] {
+    inset-inline: 0;
+    block-size: min(24px, 33%);
+    cursor: ns-resize;
+  }
+  [data-variant=column] > [data-slot=calendar-resize-handle][data-edge=start] {
+    inset-block-start: 0;
+    align-items: flex-start;
+    padding-block-start: 2px;
+  }
+  [data-variant=column] > [data-slot=calendar-resize-handle][data-edge=end] {
+    inset-block-end: 0;
+    align-items: flex-end;
+    padding-block-end: 2px;
+  }
+  [data-variant=row] > [data-slot=calendar-resize-handle] {
+    inset-block: 0;
+    inline-size: min(24px, 33%);
+    cursor: ew-resize;
+  }
+  [data-variant=row] > [data-slot=calendar-resize-handle][data-edge=start] {
+    inset-inline-start: 0;
+    justify-content: flex-start;
+    padding-inline-start: 2px;
+  }
+  [data-variant=row] > [data-slot=calendar-resize-handle][data-edge=end] {
+    inset-inline-end: 0;
+    justify-content: flex-end;
+    padding-inline-end: 2px;
+  }
+  [data-slot=calendar-resize-handle]::after {
+    content: '';
+    border-radius: 9999px;
+    background-color: currentColor;
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  [data-variant=column] > [data-slot=calendar-resize-handle]::after {
+    inline-size: min(1.5rem, 50%);
+    block-size: 3px;
+  }
+  [data-variant=row] > [data-slot=calendar-resize-handle]::after {
+    inline-size: 3px;
+    block-size: 50%;
+  }
+  [data-slot=calendar-event]:hover > [data-slot=calendar-resize-handle]::after, [data-slot=calendar-event][data-touch-selected] > [data-slot=calendar-resize-handle]::after {
+    opacity: 0.75;
+  }
+
+@media (pointer: coarse) {
+  [data-slot=calendar-event]:not([data-touch-selected]) > [data-slot=calendar-resize-handle] {
+    pointer-events: none;
+    }
+  [data-slot=calendar-event]:not([data-touch-selected]) + [data-slot=calendar-event-actions]:not([data-open], [data-placement=flow]) {
+    opacity: 0;
+    pointer-events: none;
+    }
+  [data-slot=calendar-event-actions][data-placement=flow] {
+    opacity: 1;
+    pointer-events: auto;
+    }
+  }
+  [data-slot=calendar-event-actions] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms;
+  }
+  [data-slot=calendar-event]:is(:focus-visible, [data-touch-selected]) + [data-slot=calendar-event-actions], [data-slot=calendar-event-actions]:is(:focus-visible, [data-open]) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+@media (hover: hover) {
+  [data-slot=calendar-event]:hover + [data-slot=calendar-event-actions], [data-slot=calendar-event-actions]:hover {
+    opacity: 1;
+    pointer-events: auto;
+    }
+  }
+  [data-slot=calendar-event-time], [data-slot=calendar-event-title] {
+    text-align: -webkit-match-parent;
+  }
+
+@supports (text-align: match-parent) {
+  [data-slot=calendar-event-time], [data-slot=calendar-event-title] {
+    text-align: match-parent;
+    }
+  }
+  [data-slot=calendar-event-actions]::before {
+    content: '';
+    flex-shrink: 0;
+    inline-size: 1rem;
+    block-size: 1rem;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='3.5' cy='8' r='1.25'/%3E%3Ccircle cx='8' cy='8' r='1.25'/%3E%3Ccircle cx='12.5' cy='8' r='1.25'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  [data-slot=calendar-draggable] {
+    cursor: grab;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  [data-slot=calendar-draggable][data-dragging] {
+    cursor: grabbing;
+  }
+}
+
+@layer utilities {
+  [data-slot=calendar-event]:where([data-dragging], [data-resizing]) {
+    background-color: color-mix(in oklab, var(--event-color) 25%, var(--card));
+    color: var(--card-foreground);
+    box-shadow: inset 0 0 0 1px var(--event-color);
+  }
+  [data-slot=calendar-event]:where([data-pending]) {
+    cursor: progress;
+    background-image: linear-gradient(45deg, color-mix(in oklab, currentColor 18%, transparent) 25%, transparent 25% 50%, color-mix(in oklab, currentColor 18%, transparent) 50% 75%, transparent 75%);
+    background-size: 1rem 1rem;
+  }
+  [data-slot=calendar-event]:where([data-reverting]) {
+    outline: 2px solid var(--destructive);
+    outline-offset: 1px;
+  }
+  [data-slot=calendar-event]:where([data-touch-selected]) {
+    box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--foreground);
+  }
+  [data-slot=calendar-root][data-placing] :is([data-slot=calendar-lane], [data-slot=calendar-all-day-cell], [data-slot=calendar-day]), [data-slot=calendar-root][data-placing] :is([data-slot=calendar-lane], [data-slot=calendar-all-day-cell], [data-slot=calendar-day]) * {
+    cursor: crosshair;
+  }
+  [data-slot=calendar-slot-cursor][data-placing] {
+    outline: 2px solid var(--foreground);
+    outline-offset: -2px;
+  }
+  [data-slot=calendar-slot-cursor][data-placing][data-invalid] {
+    outline-style: dashed;
+    outline-color: var(--destructive);
+  }
+  [data-slot=calendar-mirror]:where([data-external][data-pending]) {
+    background-image: linear-gradient(45deg, color-mix(in oklab, currentColor 18%, transparent) 25%, transparent 25% 50%, color-mix(in oklab, currentColor 18%, transparent) 50% 75%, transparent 75%);
+    background-size: 1rem 1rem;
+  }
+  [data-slot=calendar-mirror]:where([data-external][data-reverting]) {
+    outline: 2px solid var(--destructive);
+    outline-offset: 1px;
+  }
+  [data-slot=calendar-draggable]:where([data-dragging]) {
+    background-color: color-mix(in oklab, var(--calendar-event) 25%, var(--card));
+    color: var(--card-foreground);
+    box-shadow: inset 0 0 0 1px var(--calendar-event);
+  }
+  [data-slot=calendar-draggable]:where([data-placing]) {
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--foreground);
+  }
+  [data-slot=calendar-event]:not(:hover, :focus, [data-touch-selected]) + [data-slot=calendar-event-actions]:is([data-placement=column], [data-placement=row]):not(:hover, :focus, [data-open]) {
+    position: static;
+    inline-size: 1px;
+    block-size: 1px;
+    min-inline-size: 0;
+    min-block-size: 0;
+    margin-block: 0 -1px;
+    margin-inline: 0;
+    padding: 0;
+    border-width: 0;
+    box-shadow: none;
+    background: transparent;
+    z-index: auto;
+    transition: none;
+  }
+  [data-slot=calendar-event]:not(:hover, :focus, [data-touch-selected]) + [data-slot=calendar-event-actions]:is([data-placement=column], [data-placement=row]):not(:hover, :focus, [data-open])::before {
+    display: none;
+  }
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot=calendar-event]:where([data-pending]) {
+    animation: calendar-pending-stripes 1s linear infinite;
+    }
+  [data-slot=calendar-event]:where([data-reverting]) {
+    animation: calendar-revert 200ms ease-in-out;
+    }
+  [data-slot=calendar-mirror]:where([data-external][data-pending]) {
+    animation: calendar-pending-stripes 1s linear infinite;
+    }
+  }
+}
+
+@media print {
+  [data-slot=calendar-root] {
+    height: auto !important;
+    max-height: none !important;
+  }
+  [data-slot=calendar-scroller] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  [data-slot=calendar-event]::before {
+    print-color-adjust: exact;
+  }
+  [data-slot=calendar-root] :focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+  [data-slot=calendar-selection] {
+    display: none;
+  }
+  [data-slot=calendar-slot-cursor] {
+    display: none;
+  }
+  [data-slot=calendar-mirror] {
+    display: none;
+  }
+  [data-slot=calendar-drag-preview] {
+    display: none;
+  }
+  [data-slot=calendar-resize-handle] {
+    display: none;
+  }
+  [data-slot=calendar-event][data-pending] {
+    background-image: none;
+    animation: none;
+  }
+  [data-slot=calendar-event-actions] {
+    display: none;
+  }
+  [data-slot=dialog-overlay] {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-slot=calendar-selection] {
+    forced-color-adjust: none;
+    background-color: transparent;
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    color: CanvasText;
+  }
+  [data-slot=calendar-selection][data-invalid] {
+    border-color: CanvasText;
+    outline-color: CanvasText;
+    outline-style: dashed;
+    background-image: repeating-linear-gradient(135deg, GrayText 0 1px, transparent 1px 6px);
+  }
+  [data-slot=calendar-mirror], [data-slot=calendar-drag-preview] {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    color: CanvasText;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  [data-slot=calendar-mirror][data-invalid], [data-slot=calendar-drag-preview][data-invalid] {
+    outline-color: CanvasText;
+    outline-style: dashed;
+    background-image: repeating-linear-gradient(135deg, GrayText 0 1px, transparent 1px 6px);
+  }
+  [data-slot=calendar-resize-handle]::after {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+  [data-slot=calendar-event]:is([data-dragging], [data-resizing]):not(:focus-visible) {
+    outline: 2px dashed GrayText;
+    outline-offset: -2px;
+  }
+  [data-slot=calendar-event][data-touch-selected] {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  [data-slot=calendar-event][data-pending] {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    background-image: repeating-linear-gradient(45deg, GrayText 0 1px, transparent 1px 6px);
+    color: CanvasText;
+    outline-color: CanvasText;
+    box-shadow: none;
+  }
+  [data-slot=calendar-slot-cursor][data-placing] {
+    outline-color: Highlight;
+  }
+  [data-slot=calendar-slot-cursor][data-placing][data-invalid] {
+    outline-color: CanvasText;
+  }
+  [data-slot=calendar-mirror][data-external][data-pending] {
+    background-image: repeating-linear-gradient(45deg, GrayText 0 1px, transparent 1px 6px);
+  }
+  [data-slot=calendar-draggable][data-dragging] {
+    outline: 2px dashed GrayText;
+    outline-offset: 2px;
+  }
+  [data-slot=calendar-draggable][data-placing] {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  [data-slot=calendar-event-actions]::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+}
+            

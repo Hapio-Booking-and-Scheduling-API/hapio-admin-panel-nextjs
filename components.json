@@ -22,6 +22,6 @@
   "menuColor": "default",
   "menuAccent": "subtle",
   "registries": {
-    "@fullcalendar": "https://shadcn-registry.fullcalendar.io/{name}.json"
+    "@hapio": "https://calendar.hapio.io/r/{style}/{name}.json"
   }
 }

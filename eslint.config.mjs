@@ -17,7 +17,17 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     "test-results*/**",
     "blob-report/**",
+    // Claude Code worktrees (gitignored) hold their own builds.
+    ".claude/worktrees/**",
   ]),
+  {
+    // Hapio Calendar's registry files, copied verbatim by `npm run hapio-calendar:pack -- --registry`.
+    files: ["src/components/hapio-calendar/**"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-empty-object-type": "off",
+    },
+  },
   {
     // Playwright fixtures aren't React hooks.
     files: ["e2e/**"],

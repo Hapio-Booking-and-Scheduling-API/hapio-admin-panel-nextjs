@@ -72,16 +72,21 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
 - **Times use the location's time zone.** Hapio interprets dates and times in the location's
   time zone, and timestamps carry offsets. Date/time inputs edit wall time in that zone.
 - **Filters live in the URL**, so filtered views can be bookmarked and shared.
-- **The calendar uses FullCalendar v7** with its shadcn "monarch" theme, installed from the
-  `@fullcalendar` shadcn registry: `src/components/event-calendar*.tsx`,
-  `src/components/resource-timeline.tsx` and `src/components/ui/{event-calendar,scheduler}-views.tsx`.
-  One local change: the toolbar's view switcher is a toggle group instead of tabs without
-  panels, so reinstalling the registry items would undo it. Week, day, month and list views
-  are free. The **Resources** layout (one row per resource) uses FullCalendar Scheduler, a paid
-  add-on: it only appears, and its code is only downloaded, when
-  `NEXT_PUBLIC_FULLCALENDAR_LICENSE_KEY` is set at build time. End-to-end builds always set a
-  placeholder key, so the tests cover that layout (FullCalendar shows an "invalid license"
-  notice there).
+- **The calendar is [Hapio Calendar](https://github.com/Hapio-Booking-and-Scheduling-API/hapio-calendar)**,
+  Hapio's own MIT-licensed calendar for React 19 and shadcn/ui: the `hapio-calendar` registry
+  block copied into `src/components/hapio-calendar/` (its theme lives in `src/app/globals.css`)
+  on the `@hapio/calendar-core` and `@hapio/calendar-react` packages, with the Temporal
+  polyfill loaded from `src/instrumentation-client.ts` and `src/instrumentation.ts`. Week, day,
+  month and list views; a **Resources** layout (one row per resource) comes back with Hapio
+  Calendar 1.3's resource timeline. The packages aren't published yet, so
+  `vendor/hapio-calendar/` holds them as tarballs packed from a local checkout (`file:`
+  dependencies plus npm `overrides`). With the checkout at `../hapio-fullcalendar` (or
+  `HAPIO_CALENDAR_DIR`), `npm run hapio-calendar:pack` rebuilds and repacks them, and
+  `npm run hapio-calendar:pack -- --registry` also builds the shadcn registry from the checkout
+  and reinstalls the block from it (your own `button`, `popover` and `scroll-area` are kept).
+  Once Hapio Calendar is on npm, replace the `file:` dependencies and the overrides with the
+  published version, delete `vendor/` and the script, and point `components.json`'s `@hapio`
+  registry at the public address.
 
 ## Scripts
 

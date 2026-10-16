@@ -4,8 +4,20 @@
     {
       "name": "hapio-admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "hapio-admin-mock",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "HAPIO_BASE_URL=http://127.0.0.1:4010/v1 HAPIO_API_TOKEN=mock-token npm run dev -- -p \"${PORT:-3200}\""
+      ],
+      "port": 3200
     }
   ]
 }
