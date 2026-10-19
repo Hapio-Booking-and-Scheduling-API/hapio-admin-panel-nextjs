@@ -131,3 +131,7 @@ The Hapio API has no endpoints for the following, so the panel can't manage them
 - Creating, updating or deleting projects. `GET /project` is read-only.
 
 The **Project** page lists the webhook events and explains how to verify their signatures.
+
+## License
+
+[MIT](LICENSE)

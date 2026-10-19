@@ -2,6 +2,8 @@
   "name": "hapio-admin",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Hapio contributors",
   "engines": {
     "node": ">=22.12.0"
   },
