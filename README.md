@@ -8,6 +8,8 @@ Built with Next.js (App Router), TypeScript, Tailwind CSS and shadcn/ui.
 
 ## Getting started
 
+You need Node.js 20.9 or later (`nvm use` picks the version in `.nvmrc`).
+
 ```bash
 npm install
 cp .env.example .env.local   # then set HAPIO_API_TOKEN
@@ -78,15 +80,10 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
   on the `@hapio/calendar-core` and `@hapio/calendar-react` packages, with the Temporal
   polyfill loaded from `src/instrumentation-client.ts` and `src/instrumentation.ts`. Week, day,
   month and list views; a **Resources** layout (one row per resource) comes back with Hapio
-  Calendar 1.3's resource timeline. The packages aren't published yet, so
-  `vendor/hapio-calendar/` holds them as tarballs packed from a local checkout (`file:`
-  dependencies plus npm `overrides`). With the checkout at `../hapio-fullcalendar` (or
-  `HAPIO_CALENDAR_DIR`), `npm run hapio-calendar:pack` rebuilds and repacks them, and
-  `npm run hapio-calendar:pack -- --registry` also builds the shadcn registry from the checkout
-  and reinstalls the block from it (your own `button`, `popover` and `scroll-area` are kept).
-  Once Hapio Calendar is on npm, replace the `file:` dependencies and the overrides with the
-  published version, delete `vendor/` and the script, and point `components.json`'s `@hapio`
-  registry at the public address.
+  Calendar 1.3's resource timeline. The packages come from npm. To update the block, run
+  `npx shadcn add @hapio/hapio-calendar` (`components.json` maps the `@hapio` registry to
+  `calendar.hapio.io`) and answer "n" when it asks to overwrite your own `button`, `popover`
+  and `scroll-area`.
 
 ## Scripts
 
