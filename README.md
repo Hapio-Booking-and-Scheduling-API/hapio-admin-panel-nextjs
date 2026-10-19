@@ -102,7 +102,9 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
 
 ## Tests
 
-There are two layers of tests. Neither one touches a real Hapio project.
+There are two layers of tests. Neither one touches a real Hapio project. GitHub Actions
+runs both, plus typecheck and lint, on every pull request and every push to `main`
+(`.github/workflows/ci.yml`). Each run's Playwright report is attached to it as an artifact.
 
 - **Unit tests (Vitest).** These cover the pure logic: the typed client (all 60 operations),
   the proxy route handler, query and filter serialisation, error mapping, retry policy,
