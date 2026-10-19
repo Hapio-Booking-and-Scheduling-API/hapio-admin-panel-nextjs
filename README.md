@@ -74,7 +74,7 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
 - **Times use the location's time zone.** Hapio interprets dates and times in the location's
   time zone, and timestamps carry offsets. Date/time inputs edit wall time in that zone.
 - **Filters live in the URL**, so filtered views can be bookmarked and shared.
-- **The calendar is [Hapio Calendar](https://github.com/Hapio-Booking-and-Scheduling-API/hapio-calendar)**,
+- **The calendar is [Hapio Calendar](https://calendar.hapio.io)**,
   Hapio's own MIT-licensed calendar for React 19 and shadcn/ui: the `hapio-calendar` registry
   block copied into `src/components/hapio-calendar/` (its theme lives in `src/app/globals.css`)
   on the `@hapio/calendar-core` and `@hapio/calendar-react` packages, with the Temporal
