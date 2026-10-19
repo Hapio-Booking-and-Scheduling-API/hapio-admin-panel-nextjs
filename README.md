@@ -8,7 +8,7 @@ Built with Next.js (App Router), TypeScript, Tailwind CSS and shadcn/ui.
 
 ## Getting started
 
-You need Node.js 20.9 or later (`nvm use` picks the version in `.nvmrc`).
+You need Node.js 22.12 or later (`nvm use` picks the version in `.nvmrc`).
 
 ```bash
 npm install
