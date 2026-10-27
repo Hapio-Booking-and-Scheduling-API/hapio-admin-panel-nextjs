@@ -320,6 +320,52 @@ describe("response", () => {
   })
 })
 
+describe("gateway mode: no token, forwarded cookies", () => {
+  beforeEach(() => {
+    vi.stubEnv("HAPIO_API_TOKEN", "")
+    vi.stubEnv("HAPIO_BASE_URL", "https://gateway.test/v1/hapio")
+    vi.stubEnv("HAPIO_FORWARD_COOKIES", "hapio_demo")
+  })
+
+  it("forwards only the listed cookies, without a token", async () => {
+    await call("GET", { headers: { ...TRUSTED, cookie: "hapio_demo=abc123; other=secret" } })
+    const { url, headers } = upstream()
+    expect(url).toBe("https://gateway.test/v1/hapio/locations")
+    expect(headers.Cookie).toBe("hapio_demo=abc123")
+    expect(headers.Authorization).toBeUndefined()
+  })
+
+  it("sends no Cookie header when the cookie isn't set", async () => {
+    await call("GET", { headers: { ...TRUSTED, cookie: "other=secret" } })
+    expect(upstream().headers.Cookie).toBeUndefined()
+  })
+
+  it("sends both when a token is also set", async () => {
+    vi.stubEnv("HAPIO_API_TOKEN", "test-token")
+    await call("GET", { headers: { ...TRUSTED, cookie: "hapio_demo=abc123" } })
+    expect(upstream().headers).toMatchObject({ Authorization: "Bearer test-token", Cookie: "hapio_demo=abc123" })
+  })
+
+  it("refuses to forward cookies over plain HTTP, except to this machine", async () => {
+    vi.stubEnv("HAPIO_BASE_URL", "http://gateway.test/v1")
+    const response = await call("GET", { headers: { ...TRUSTED, cookie: "hapio_demo=abc123" } })
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ code: "HAPIO_NOT_CONFIGURED" })
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    vi.stubEnv("HAPIO_BASE_URL", "http://127.0.0.1:8000/v1/hapio")
+    await call("GET", { headers: { ...TRUSTED, cookie: "hapio_demo=abc123" } })
+    expect(upstream().headers.Cookie).toBe("hapio_demo=abc123")
+  })
+
+  it("still needs a token or cookies to forward", async () => {
+    vi.stubEnv("HAPIO_FORWARD_COOKIES", "")
+    const response = await call("GET")
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ code: "HAPIO_NOT_CONFIGURED" })
+  })
+})
+
 describe("exports", () => {
   it("uses one handler for every method", () => {
     expect(new Set([GET, POST, PUT, PATCH, DELETE]).size).toBe(1)

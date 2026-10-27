@@ -18,6 +18,7 @@ import { SectionCard } from "@/components/entity/section-card"
 import { DetailSkeleton } from "@/components/entity/skeletons"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { omitKeys } from "@/lib/format/json"
 import { hapio } from "@/lib/hapio/client"
@@ -82,24 +83,30 @@ export function LocationDetail({ id }: { id: string }) {
                 <CalendarCheckIcon /> Bookings
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => toggle.mutate(location)} disabled={toggle.isPending}>
-              <PowerIcon /> {location.enabled ? "Disable" : "Enable"}
-            </Button>
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <PencilIcon /> Edit
-            </Button>
-            <ConfirmDialog
-              title={`Delete ${location.name}?`}
-              description="This permanently deletes the location. Its bookings are kept but lose their location. Consider disabling it instead."
-              confirmLabel="Delete location"
-              destructive
-              onConfirm={() => remove.mutateAsync(location)}
-              trigger={
-                <Button variant="destructive">
-                  <Trash2Icon /> Delete
+            {can("locations", "update") && (
+              <>
+                <Button variant="outline" onClick={() => toggle.mutate(location)} disabled={toggle.isPending}>
+                  <PowerIcon /> {location.enabled ? "Disable" : "Enable"}
                 </Button>
-              }
-            />
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <PencilIcon /> Edit
+                </Button>
+              </>
+            )}
+            {can("locations", "delete") && (
+              <ConfirmDialog
+                title={`Delete ${location.name}?`}
+                description="This permanently deletes the location. Its bookings are kept but lose their location. Consider disabling it instead."
+                confirmLabel="Delete location"
+                destructive
+                onConfirm={() => remove.mutateAsync(location)}
+                trigger={
+                  <Button variant="destructive">
+                    <Trash2Icon /> Delete
+                  </Button>
+                }
+              />
+            )}
           </>
         }
       />
@@ -166,8 +173,10 @@ export function LocationDetail({ id }: { id: string }) {
         <TabsContent value="json">
           <RawJsonCard
             value={location}
-            toPutBody={(l) => omitKeys(l, READ_ONLY)}
-            onReplace={(body) => replace.mutateAsync(body)}
+            {...(can("locations", "update") && {
+              toPutBody: (l: Location) => omitKeys(l, READ_ONLY),
+              onReplace: (body: unknown) => replace.mutateAsync(body),
+            })}
           />
         </TabsContent>
       </Tabs>

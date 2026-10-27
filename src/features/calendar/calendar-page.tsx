@@ -10,7 +10,7 @@ import {
 import { MapPinIcon, TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 import { parseAsBoolean, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs"
-import { useMemo, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { cn } from "cn"
 
 import { ErrorAlert } from "@/components/entity/error-alert"
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { indexById, useAllLocations } from "@/lib/hapio/hooks"
+import { indexById, useAllLocations, useBooking } from "@/lib/hapio/hooks"
 
 import {
   CALENDAR_COLORS,
@@ -51,6 +51,8 @@ const STATE = {
   date: parseAsString,
   availability: parseAsBoolean.withDefault(false),
   canceled: parseAsBoolean.withDefault(false),
+  // A booking to jump to and pulse, e.g. from a link in a notification
+  highlight: parseAsString,
 }
 
 /** 24-hour clock for event times and the time axis. */
@@ -63,6 +65,21 @@ export function CalendarPage() {
   const [state, setState] = useQueryStates(STATE, { history: "replace" })
   // What the calendar shows, as it reports it (after each navigation, and once on mount).
   const [range, setRange] = useState<VisibleRange | null>(null)
+
+  // Once the highlighted booking is known, show its location and day (once, so the visitor can move on)
+  const highlighted = useBooking(state.highlight)
+  const jumpedTo = useRef<string | null>(null)
+  useEffect(() => {
+    const booking = highlighted.data
+    if (!booking || jumpedTo.current === booking.id) return
+    jumpedTo.current = booking.id
+    // Hapio's timestamps are in the location's time zone, so the date is the local day
+    void setState({
+      ...(booking.location ? { location: booking.location.id } : {}),
+      resource: null,
+      date: booking.starts_at.slice(0, 10),
+    })
+  }, [highlighted.data, setState])
 
   const locations = useAllLocations()
   const locationsById = indexById(locations.data)
@@ -103,7 +120,14 @@ export function CalendarPage() {
       : null
   )
 
-  const bookingEvents = useMemo(() => shownBookings.map(bookingEvent), [shownBookings])
+  const bookingEvents = useMemo(
+    () =>
+      shownBookings.map((booking) => {
+        const event = bookingEvent(booking)
+        return booking.id === state.highlight ? { ...event, className: cn(event.className, "admin-highlight") } : event
+      }),
+    [shownBookings, state.highlight]
+  )
   const openTimeData = openTime.data
   const openEvents = useMemo(
     () => (openTimeId ? openTimeEvents(openTimeData?.[openTimeId], { timeZone }) : []),

@@ -18,6 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { can } from "@/lib/admin-config"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation } from "@/lib/hapio/hooks"
 import type { RecurringSchedule, Resource } from "@/lib/hapio/types"
@@ -77,6 +78,9 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
   const isOpen = (id: string) => expanded[id] ?? items?.length === 1
   const filtersActive = !!filters.location || !!filters.from || !!filters.to
 
+  const canUpdate = can("schedules", "update")
+  const canDelete = can("schedules", "delete")
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -122,9 +126,11 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
           </label>
           <SortSelect value={list.sort} onChange={list.setSort} options={SORT_OPTIONS} />
         </FilterBar>
-        <Button size="sm" onClick={() => setDialog({})}>
-          <PlusIcon /> New schedule
-        </Button>
+        {can("schedules", "create") && (
+          <Button size="sm" onClick={() => setDialog({})}>
+            <PlusIcon /> New schedule
+          </Button>
+        )}
       </div>
 
       {(query.isLoading && !items) || awaitingItems ? (
@@ -147,7 +153,7 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
                 : "Create a recurring schedule to set this resource's weekly hours at a location."}
             </EmptyDescription>
           </EmptyHeader>
-          {!filtersActive && (
+          {!filtersActive && can("schedules", "create") && (
             <EmptyContent>
               <Button size="sm" variant="outline" onClick={() => setDialog({})}>
                 <PlusIcon /> New schedule
@@ -190,19 +196,27 @@ export function RecurringSchedulesTab({ resource }: { resource: Resource }) {
                       </span>
                     </button>
                   </CollapsibleTrigger>
-                  <RowActions
-                    label={`Actions for schedule at ${schedule.location?.name ?? "unknown location"}, ${dateRange(schedule)}`}
-                    actions={[
-                      { label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ schedule }) },
-                      {
-                        label: "Delete",
-                        icon: <Trash2Icon />,
-                        destructive: true,
-                        separatorBefore: true,
-                        onSelect: () => setDeleting(schedule),
-                      },
-                    ]}
-                  />
+                  {(canUpdate || canDelete) && (
+                    <RowActions
+                      label={`Actions for schedule at ${schedule.location?.name ?? "unknown location"}, ${dateRange(schedule)}`}
+                      actions={[
+                        ...(canUpdate
+                          ? [{ label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ schedule }) }]
+                          : []),
+                        ...(canDelete
+                          ? [
+                              {
+                                label: "Delete",
+                                icon: <Trash2Icon />,
+                                destructive: true,
+                                separatorBefore: canUpdate,
+                                onSelect: () => setDeleting(schedule),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  )}
                 </div>
                 <CollapsibleContent className="border-t p-3 sm:p-4">
                   <RecurringScheduleBlocks resourceId={resource.id} schedule={schedule} />

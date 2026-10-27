@@ -28,36 +28,42 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { isShown, type Section } from "@/lib/admin-config"
 import { useProject } from "@/lib/hapio/hooks"
 
 import { HapioLogo } from "./hapio-logo"
 
-const NAV = [
+const ALL_NAV = [
   {
     label: "Overview",
-    items: [{ title: "Dashboard", href: "/", icon: LayoutDashboardIcon }],
+    items: [{ title: "Dashboard", href: "/", icon: LayoutDashboardIcon, section: "dashboard" }],
   },
   {
     label: "Bookings",
     items: [
-      { title: "Calendar", href: "/calendar", icon: CalendarDaysIcon },
-      { title: "Bookings", href: "/bookings", icon: CalendarCheckIcon },
-      { title: "Booking groups", href: "/booking-groups", icon: BoxesIcon },
+      { title: "Calendar", href: "/calendar", icon: CalendarDaysIcon, section: "calendar" },
+      { title: "Bookings", href: "/bookings", icon: CalendarCheckIcon, section: "bookings" },
+      { title: "Booking groups", href: "/booking-groups", icon: BoxesIcon, section: "booking-groups" },
     ],
   },
   {
     label: "Setup",
     items: [
-      { title: "Locations", href: "/locations", icon: MapPinIcon },
-      { title: "Resources", href: "/resources", icon: UsersIcon },
-      { title: "Services", href: "/services", icon: SparklesIcon },
+      { title: "Locations", href: "/locations", icon: MapPinIcon, section: "locations" },
+      { title: "Resources", href: "/resources", icon: UsersIcon, section: "resources" },
+      { title: "Services", href: "/services", icon: SparklesIcon, section: "services" },
     ],
   },
   {
     label: "Account",
-    items: [{ title: "Project", href: "/project", icon: FolderKanbanIcon }],
+    items: [{ title: "Project", href: "/project", icon: FolderKanbanIcon, section: "project" }],
   },
-]
+] satisfies { label: string; items: { section: Section; [key: string]: unknown }[] }[]
+
+// Without the hidden sections (NEXT_PUBLIC_ADMIN_HIDDEN), and their groups if empty
+const NAV = ALL_NAV.map((group) => ({ ...group, items: group.items.filter((item) => isShown(item.section)) })).filter(
+  (group) => group.items.length
+)
 
 function ProjectName() {
   const project = useProject()

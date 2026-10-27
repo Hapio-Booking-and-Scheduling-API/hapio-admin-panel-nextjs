@@ -24,6 +24,7 @@ import { TimezoneCombobox } from "@/components/inputs/timezone-combobox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation, useLocations } from "@/lib/hapio/hooks"
@@ -98,7 +99,11 @@ export function LocationsPage() {
       className: "hidden lg:table-cell",
       cell: (l) => formatDateTime(l.created_at),
     },
-    {
+  ]
+  const canUpdate = can("locations", "update")
+  const canDelete = can("locations", "delete")
+  if (canUpdate || canDelete) {
+    columns.push({
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       className: "w-10 text-right",
@@ -106,27 +111,35 @@ export function LocationsPage() {
         <RowActions
           label={`Actions for ${l.name}`}
           actions={[
-            { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(l) },
-            {
-              label: l.enabled ? "Disable" : "Enable",
-              icon: <PowerIcon />,
-              onSelect: () => toggle.mutate(l),
-            },
-            {
-              label: "Delete",
-              icon: <Trash2Icon />,
-              destructive: true,
-              separatorBefore: true,
-              onSelect: () => {
-                setDeleting(l)
-                setDeleteOpen(true)
-              },
-            },
+            ...(canUpdate
+              ? [
+                  { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(l) },
+                  {
+                    label: l.enabled ? "Disable" : "Enable",
+                    icon: <PowerIcon />,
+                    onSelect: () => toggle.mutate(l),
+                  },
+                ]
+              : []),
+            ...(canDelete
+              ? [
+                  {
+                    label: "Delete",
+                    icon: <Trash2Icon />,
+                    destructive: true,
+                    separatorBefore: canUpdate,
+                    onSelect: () => {
+                      setDeleting(l)
+                      setDeleteOpen(true)
+                    },
+                  },
+                ]
+              : []),
           ]}
         />
       ),
-    },
-  ]
+    })
+  }
 
   const filtersActive =
     filters.disabled !== "include" || !!filters.timezone || !!filters.strategy || !!filters.f?.length
@@ -137,9 +150,11 @@ export function LocationsPage() {
         title="Locations"
         description="Places where resources are scheduled and bookings happen."
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <PlusIcon /> New location
-          </Button>
+          can("locations", "create") && (
+            <Button onClick={() => setCreating(true)}>
+              <PlusIcon /> New location
+            </Button>
+          )
         }
       />
       <FilterBar onReset={resetFilters} canReset={filtersActive}>

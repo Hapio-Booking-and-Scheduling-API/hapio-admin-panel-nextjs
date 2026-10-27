@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { can } from "@/lib/admin-config"
 import { dayRange, todayIn } from "@/lib/format/datetime"
 import { indexById, useAllLocations } from "@/lib/hapio/hooks"
 import type { Resource } from "@/lib/hapio/types"
@@ -228,14 +229,16 @@ export function AvailabilityTab({
                   Add a recurring schedule or schedule block at {location.name} to open up time for bookings.
                 </EmptyDescription>
               </EmptyHeader>
-              <EmptyContent className="flex-row flex-wrap justify-center">
-                <Button size="sm" variant="outline" onClick={() => onNavigate("recurring")}>
-                  <CalendarSyncIcon /> Recurring schedules
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => onNavigate("blocks")}>
-                  <CalendarClockIcon /> Schedule blocks
-                </Button>
-              </EmptyContent>
+              {can("schedules", "create") && (
+                <EmptyContent className="flex-row flex-wrap justify-center">
+                  <Button size="sm" variant="outline" onClick={() => onNavigate("recurring")}>
+                    <CalendarSyncIcon /> Recurring schedules
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => onNavigate("blocks")}>
+                    <CalendarClockIcon /> Schedule blocks
+                  </Button>
+                </EmptyContent>
+              )}
             </Empty>
           ) : (
             <div className="flex flex-col gap-4">

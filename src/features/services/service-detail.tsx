@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { can } from "@/lib/admin-config"
 import { formatDateTime, shortTime } from "@/lib/format/datetime"
 import { humanizeDuration, isZeroDuration, parseDuration } from "@/lib/format/duration"
 import { omitKeys } from "@/lib/format/json"
@@ -98,24 +99,30 @@ export function ServiceDetail({ id }: { id: string }) {
                 <CalendarCheckIcon /> Bookings
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => toggle.mutate(service)} disabled={toggle.isPending}>
-              <PowerIcon /> {service.enabled ? "Disable" : "Enable"}
-            </Button>
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <PencilIcon /> Edit
-            </Button>
-            <ConfirmDialog
-              title={`Delete ${service.name}?`}
-              description="This permanently deletes the service and its resource associations. Its bookings are kept but lose their service. Consider disabling it instead."
-              confirmLabel="Delete service"
-              destructive
-              onConfirm={() => remove.mutateAsync()}
-              trigger={
-                <Button variant="destructive">
-                  <Trash2Icon /> Delete
+            {can("services", "update") && (
+              <>
+                <Button variant="outline" onClick={() => toggle.mutate(service)} disabled={toggle.isPending}>
+                  <PowerIcon /> {service.enabled ? "Disable" : "Enable"}
                 </Button>
-              }
-            />
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <PencilIcon /> Edit
+                </Button>
+              </>
+            )}
+            {can("services", "delete") && (
+              <ConfirmDialog
+                title={`Delete ${service.name}?`}
+                description="This permanently deletes the service and its resource associations. Its bookings are kept but lose their service. Consider disabling it instead."
+                confirmLabel="Delete service"
+                destructive
+                onConfirm={() => remove.mutateAsync()}
+                trigger={
+                  <Button variant="destructive">
+                    <Trash2Icon /> Delete
+                  </Button>
+                }
+              />
+            )}
           </>
         }
       />
@@ -154,8 +161,10 @@ export function ServiceDetail({ id }: { id: string }) {
         <TabsContent value="json">
           <RawJsonCard
             value={service}
-            toPutBody={(s) => omitKeys(s, READ_ONLY)}
-            onReplace={(body) => replace.mutateAsync(body)}
+            {...(can("services", "update") && {
+              toPutBody: (s: Service) => omitKeys(s, READ_ONLY),
+              onReplace: (body: unknown) => replace.mutateAsync(body),
+            })}
           />
         </TabsContent>
       </Tabs>

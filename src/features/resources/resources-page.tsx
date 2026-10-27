@@ -21,6 +21,7 @@ import {
 import { FilterBar } from "@/components/filters/filter-bar"
 import { TriStateFilter } from "@/components/filters/tri-state-filter"
 import { Button } from "@/components/ui/button"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { hapio, type ResourceListParams } from "@/lib/hapio/client"
 import { useHapioMutation, useResources } from "@/lib/hapio/hooks"
@@ -94,7 +95,11 @@ export function ResourcesPage() {
       className: "hidden md:table-cell",
       cell: (r) => formatDateTime(r.created_at),
     },
-    {
+  ]
+  const canUpdate = can("resources", "update")
+  const canDelete = can("resources", "delete")
+  if (canUpdate || canDelete) {
+    columns.push({
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       className: "w-10 text-right",
@@ -102,24 +107,32 @@ export function ResourcesPage() {
         <RowActions
           label={`Actions for ${r.name}`}
           actions={[
-            { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(r) },
-            {
-              label: r.enabled ? "Disable" : "Enable",
-              icon: <PowerIcon />,
-              onSelect: () => toggle.mutate(r),
-            },
-            {
-              label: "Delete",
-              icon: <Trash2Icon />,
-              destructive: true,
-              separatorBefore: true,
-              onSelect: () => setDeleting(r),
-            },
+            ...(canUpdate
+              ? [
+                  { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(r) },
+                  {
+                    label: r.enabled ? "Disable" : "Enable",
+                    icon: <PowerIcon />,
+                    onSelect: () => toggle.mutate(r),
+                  },
+                ]
+              : []),
+            ...(canDelete
+              ? [
+                  {
+                    label: "Delete",
+                    icon: <Trash2Icon />,
+                    destructive: true,
+                    separatorBefore: canUpdate,
+                    onSelect: () => setDeleting(r),
+                  },
+                ]
+              : []),
           ]}
         />
       ),
-    },
-  ]
+    })
+  }
 
   const filtersActive = filters.disabled !== "include" || !!filters.f?.length
 
@@ -129,9 +142,11 @@ export function ResourcesPage() {
         title="Resources"
         description="People, rooms or equipment that can be booked, with their schedules."
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <PlusIcon /> New resource
-          </Button>
+          can("resources", "create") && (
+            <Button onClick={() => setCreating(true)}>
+              <PlusIcon /> New resource
+            </Button>
+          )
         }
       />
       <FilterBar onReset={resetFilters} canReset={filtersActive}>
@@ -161,7 +176,7 @@ export function ResourcesPage() {
           filtersActive ? "No resources match these filters." : "Create your first resource to start scheduling."
         }
         emptyAction={
-          filtersActive ? undefined : (
+          filtersActive || !can("resources", "create") ? undefined : (
             <Button size="sm" onClick={() => setCreating(true)}>
               <PlusIcon /> New resource
             </Button>

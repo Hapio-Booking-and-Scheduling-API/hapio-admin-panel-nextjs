@@ -1,6 +1,10 @@
 // Server-side proxy to the Hapio API. The browser calls /api/hapio/<path>; this
 // handler forwards the request with the secret API token, so the token never
 // reaches the client.
+//
+// Behind your own gateway, the token can be left out: the proxy then forwards
+// the cookies named in HAPIO_FORWARD_COOKIES, and the gateway at HAPIO_BASE_URL
+// adds the token.
 
 import type { NextRequest } from "next/server"
 
@@ -16,6 +20,32 @@ const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 
 function json(status: number, message: string, code?: string) {
   return Response.json(code ? { message, code } : { message }, { status })
+}
+
+function forwardedCookieNames(): string[] {
+  return (process.env.HAPIO_FORWARD_COOKIES ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+/** Cookies are only sent over HTTPS, or to this machine during development. */
+function isSafeToForwardCookies(base: string): boolean {
+  try {
+    const url = new URL(base)
+    return url.protocol === "https:" || DEFAULT_ALLOWED_HOSTS.includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+/** The Cookie header with only the listed cookies, or null when none are set. */
+function forwardedCookies(req: NextRequest, names: string[]): string | null {
+  const pairs = names.flatMap((name) => {
+    const cookie = req.cookies.get(name)
+    return cookie ? [`${name}=${cookie.value}`] : []
+  })
+  return pairs.length ? pairs.join("; ") : null
 }
 
 function allowedHosts(): string[] {
@@ -59,7 +89,8 @@ async function proxy(req: NextRequest, ctx: RouteContext<"/api/hapio/[...path]">
   if (rejected) return rejected
 
   const token = process.env.HAPIO_API_TOKEN
-  if (!token) {
+  const cookieNames = forwardedCookieNames()
+  if (!token && !cookieNames.length) {
     return json(
       500,
       "HAPIO_API_TOKEN is not set. Add it to .env.local and restart the server.",
@@ -75,9 +106,14 @@ async function proxy(req: NextRequest, ctx: RouteContext<"/api/hapio/[...path]">
   const base = (process.env.HAPIO_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "")
   const url = `${base}/${path.join("/")}${req.nextUrl.search}`
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/json",
+  const headers: Record<string, string> = { Accept: "application/json" }
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (cookieNames.length) {
+    if (!isSafeToForwardCookies(base)) {
+      return json(500, "HAPIO_FORWARD_COOKIES needs an HTTPS HAPIO_BASE_URL.", "HAPIO_NOT_CONFIGURED")
+    }
+    const cookie = forwardedCookies(req, cookieNames)
+    if (cookie) headers.Cookie = cookie
   }
   let body: string | undefined
   if (req.method !== "GET" && req.method !== "DELETE") {

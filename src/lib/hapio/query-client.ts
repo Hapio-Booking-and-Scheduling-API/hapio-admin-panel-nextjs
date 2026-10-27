@@ -1,5 +1,7 @@
 import { QueryClient } from "@tanstack/react-query"
 
+import { adminConfig } from "@/lib/admin-config"
+
 import { isHapioError } from "./errors"
 
 /** Retry 429s up to three times and 5xx once; never retry other 4xx or a missing token. */
@@ -19,8 +21,8 @@ export function retryDelay(attempt: number, error: unknown): number {
     : Math.min(1000 * 2 ** attempt, 10_000)
 }
 
-export function makeQueryClient() {
-  return new QueryClient({
+export function makeQueryClient(refetchInterval: number | false = adminConfig.refetchInterval) {
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -31,4 +33,12 @@ export function makeQueryClient() {
       },
     },
   })
+
+  // Bookings made elsewhere (NEXT_PUBLIC_ADMIN_REFETCH_INTERVAL) show up by
+  // themselves. Only while the tab is visible: TanStack pauses it otherwise.
+  if (refetchInterval) {
+    client.setQueryDefaults(["hapio", "bookings"], { refetchInterval, refetchIntervalInBackground: false })
+  }
+
+  return client
 }

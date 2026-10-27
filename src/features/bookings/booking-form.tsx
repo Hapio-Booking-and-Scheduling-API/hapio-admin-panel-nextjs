@@ -20,6 +20,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
+import { adminConfig, isShown } from "@/lib/admin-config"
 import { formatPrice } from "@/lib/format/price"
 import { pickDirty } from "@/lib/forms"
 import { hapio } from "@/lib/hapio/client"
@@ -266,18 +267,20 @@ function BookingFields({
         </div>
       </FormSection>
 
-      <FormSection title="Group & metadata">
-        <FormField
-          control={control}
-          name="booking_group_id"
-          label="Booking group"
-          description={
-            mode === "edit" ? "Clear to remove the booking from its group." : "Optional. Paste an ID or pick a recent group."
-          }
-          render={({ field, id, invalid }) => (
-            <BookingGroupIdInput id={id} invalid={invalid} value={field.value} onChange={field.onChange} />
-          )}
-        />
+      <FormSection title={isShown("booking-groups") ? "Group & metadata" : "Metadata"}>
+        {isShown("booking-groups") && (
+          <FormField
+            control={control}
+            name="booking_group_id"
+            label="Booking group"
+            description={
+              mode === "edit" ? "Clear to remove the booking from its group." : "Optional. Paste an ID or pick a recent group."
+            }
+            render={({ field, id, invalid }) => (
+              <BookingGroupIdInput id={id} invalid={invalid} value={field.value} onChange={field.onChange} />
+            )}
+          />
+        )}
         <div className="grid gap-5 md:grid-cols-2">
           <FormField
             control={control}
@@ -427,7 +430,7 @@ export function BookingCreateForm({ defaults }: { defaults?: BookingFormDefaults
       noValidate
       onSubmit={form.handleSubmit((values) => {
         setFormErrors([])
-        mutation.mutate(toPostBody(values))
+        mutation.mutate(toPostBody(values, adminConfig.bookingCreateMetadata))
       })}
       className="w-full max-w-3xl"
     >

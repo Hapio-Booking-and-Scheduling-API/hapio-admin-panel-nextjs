@@ -9,9 +9,11 @@ import {
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react"
+import { cn } from "cn"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useQueryState } from "nuqs"
+import { useEffect, useState } from "react"
 
 import { DataTable, type Column } from "@/components/data-table/data-table"
 import { useListState } from "@/components/data-table/use-list-state"
@@ -20,6 +22,7 @@ import { ConfirmDialog } from "@/components/entity/confirm-dialog"
 import { PageHeader } from "@/components/entity/page-header"
 import { RowActions, type RowAction } from "@/components/entity/row-actions"
 import { Button } from "@/components/ui/button"
+import { can, isShown } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { formatPrice } from "@/lib/format/price"
 import { useBookings } from "@/lib/hapio/hooks"
@@ -27,6 +30,7 @@ import type { Booking } from "@/lib/hapio/types"
 
 import { BookingFilterBar, bookingFilterParams, bookingFiltersActive, useBookingFilters } from "./booking-filters"
 import { BookingEditDialog } from "./booking-form"
+import { BookingSourceBadge } from "./booking-source-badge"
 import { CancelBookingDialog } from "./cancel-booking-dialog"
 import { useBookingActions } from "./use-booking-actions"
 import { BOOKING_FILTER_FIELDS, bookingTimeRange, bookingTitle, bookingWhen, shortId } from "./utils"
@@ -41,6 +45,8 @@ export function BookingsPage() {
   const [canceling, setCanceling] = useState<Booking | null>(null)
   const [deleting, setDeleting] = useState<Booking | null>(null)
   const actions = useBookingActions()
+  // ?highlight=<booking id>, e.g. from a notification: the row is shown and pulses
+  const [highlight] = useQueryState("highlight")
 
   const query = useBookings({
     page: list.page,
@@ -49,23 +55,49 @@ export function BookingsPage() {
     ...bookingFilterParams(filters, BOOKING_FILTER_FIELDS),
   })
 
+  useEffect(() => {
+    if (!highlight || !query.data) return
+    document.querySelector(`[data-row-id="${CSS.escape(highlight)}"]`)?.scrollIntoView({ block: "center" })
+  }, [highlight, query.data])
+
+  const canUpdate = can("bookings", "update")
   const rowActions = (b: Booking): RowAction[] => [
     { label: "View", icon: <EyeIcon />, onSelect: () => router.push(`/bookings/${b.id}`) },
-    { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(b) },
-    ...(b.is_temporary && !b.is_canceled
+    ...(canUpdate ? [{ label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(b) }] : []),
+    ...(canUpdate && b.is_temporary && !b.is_canceled
       ? [{ label: "Finalize", icon: <CheckCircle2Icon />, onSelect: () => actions.finalize.mutate(b.id) }]
       : []),
-    b.is_canceled
-      ? { label: "Restore", icon: <RotateCcwIcon />, onSelect: () => actions.restore.mutate(b.id) }
-      : { label: "Cancel booking", icon: <BanIcon />, onSelect: () => setCanceling(b) },
-    {
-      label: "Delete",
-      icon: <Trash2Icon />,
-      destructive: true,
-      separatorBefore: true,
-      onSelect: () => setDeleting(b),
-    },
+    ...(!canUpdate
+      ? []
+      : b.is_canceled
+        ? [{ label: "Restore", icon: <RotateCcwIcon />, onSelect: () => actions.restore.mutate(b.id) }]
+        : [{ label: "Cancel booking", icon: <BanIcon />, onSelect: () => setCanceling(b) }]),
+    ...(can("bookings", "delete")
+      ? [
+          {
+            label: "Delete",
+            icon: <Trash2Icon />,
+            destructive: true,
+            separatorBefore: true,
+            onSelect: () => setDeleting(b),
+          },
+        ]
+      : []),
   ]
+
+  const groupColumn: Column<Booking> = {
+    id: "group",
+    header: "Group",
+    className: "hidden xl:table-cell",
+    cell: (b) =>
+      b.booking_group ? (
+        <Link className={`font-mono text-xs ${linkClass}`} href={`/booking-groups/${b.booking_group.id}`}>
+          {shortId(b.booking_group.id)}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  }
 
   const columns: Column<Booking>[] = [
     {
@@ -120,26 +152,23 @@ export function BookingsPage() {
           <span className="text-muted-foreground">—</span>
         ),
     },
-    { id: "status", header: "Status", cell: (b) => <BookingStatusBadge booking={b} /> },
+    {
+      id: "status",
+      header: "Status",
+      cell: (b) => (
+        <div className="flex flex-wrap gap-1">
+          <BookingStatusBadge booking={b} />
+          <BookingSourceBadge booking={b} />
+        </div>
+      ),
+    },
     {
       id: "price",
       header: "Price",
       className: "hidden md:table-cell text-right tabular-nums",
       cell: (b) => formatPrice(b.price),
     },
-    {
-      id: "group",
-      header: "Group",
-      className: "hidden xl:table-cell",
-      cell: (b) =>
-        b.booking_group ? (
-          <Link className={`font-mono text-xs ${linkClass}`} href={`/booking-groups/${b.booking_group.id}`}>
-            {shortId(b.booking_group.id)}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
+    ...(isShown("booking-groups") ? [groupColumn] : []),
     {
       id: "created_at",
       header: "Created",
@@ -163,11 +192,13 @@ export function BookingsPage() {
         title="Bookings"
         description="Every booking across your locations, in each location's local time."
         actions={
-          <Button asChild>
-            <Link href="/bookings/new">
-              <PlusIcon /> New booking
-            </Link>
-          </Button>
+          can("bookings", "create") && (
+            <Button asChild>
+              <Link href="/bookings/new">
+                <PlusIcon /> New booking
+              </Link>
+            </Button>
+          )
         }
       />
       <BookingFilterBar
@@ -196,7 +227,9 @@ export function BookingsPage() {
           onPerPageChange: list.setPerPage,
         }}
         rowHref={(b) => `/bookings/${b.id}`}
-        rowClassName={(b) => (b.is_canceled ? "text-muted-foreground" : undefined)}
+        rowClassName={(b) =>
+          cn(b.is_canceled && "text-muted-foreground", b.id === highlight && "admin-highlight") || undefined
+        }
         emptyTitle="No bookings"
         emptyDescription={
           filtersActive ? "No bookings match these filters." : "Create a booking, or book one from a service's bookable slots."
@@ -206,13 +239,13 @@ export function BookingsPage() {
             <Button variant="outline" size="sm" onClick={resetFilters}>
               Reset filters
             </Button>
-          ) : (
+          ) : can("bookings", "create") ? (
             <Button size="sm" asChild>
               <Link href="/bookings/new">
                 <PlusIcon /> New booking
               </Link>
             </Button>
-          )
+          ) : undefined
         }
       />
       {editing && (

@@ -22,6 +22,7 @@ import { FilterBar } from "@/components/filters/filter-bar"
 import { TriStateFilter } from "@/components/filters/tri-state-filter"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation, useServices } from "@/lib/hapio/hooks"
@@ -94,7 +95,11 @@ export function ServicesPage() {
       className: "hidden lg:table-cell",
       cell: (s) => formatDateTime(s.created_at),
     },
-    {
+  ]
+  const canUpdate = can("services", "update")
+  const canDelete = can("services", "delete")
+  if (canUpdate || canDelete) {
+    columns.push({
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       className: "w-10 text-right",
@@ -102,24 +107,32 @@ export function ServicesPage() {
         <RowActions
           label={`Actions for ${s.name}`}
           actions={[
-            { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(s) },
-            {
-              label: s.enabled ? "Disable" : "Enable",
-              icon: <PowerIcon />,
-              onSelect: () => toggle.mutate(s),
-            },
-            {
-              label: "Delete",
-              icon: <Trash2Icon />,
-              destructive: true,
-              separatorBefore: true,
-              onSelect: () => setDeleting(s),
-            },
+            ...(canUpdate
+              ? [
+                  { label: "Edit", icon: <PencilIcon />, onSelect: () => setEditing(s) },
+                  {
+                    label: s.enabled ? "Disable" : "Enable",
+                    icon: <PowerIcon />,
+                    onSelect: () => toggle.mutate(s),
+                  },
+                ]
+              : []),
+            ...(canDelete
+              ? [
+                  {
+                    label: "Delete",
+                    icon: <Trash2Icon />,
+                    destructive: true,
+                    separatorBefore: canUpdate,
+                    onSelect: () => setDeleting(s),
+                  },
+                ]
+              : []),
           ]}
         />
       ),
-    },
-  ]
+    })
+  }
 
   const filtersActive = filters.disabled !== "include" || !!filters.type || !!filters.f?.length
 
@@ -129,9 +142,11 @@ export function ServicesPage() {
         title="Services"
         description="What customers book: fixed appointments, flexible-length sessions or multi-day rentals."
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <PlusIcon /> New service
-          </Button>
+          can("services", "create") && (
+            <Button onClick={() => setCreating(true)}>
+              <PlusIcon /> New service
+            </Button>
+          )
         }
       />
       <FilterBar onReset={resetFilters} canReset={filtersActive}>
@@ -182,9 +197,11 @@ export function ServicesPage() {
               Reset filters
             </Button>
           ) : (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <PlusIcon /> New service
-            </Button>
+            can("services", "create") && (
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <PlusIcon /> New service
+              </Button>
+            )
           )
         }
       />

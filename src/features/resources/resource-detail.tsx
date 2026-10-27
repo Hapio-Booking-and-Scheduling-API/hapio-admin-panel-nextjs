@@ -19,6 +19,7 @@ import { DetailSkeleton } from "@/components/entity/skeletons"
 import { useBreadcrumbLabel } from "@/components/layout/breadcrumbs"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { omitKeys } from "@/lib/format/json"
 import { hapio } from "@/lib/hapio/client"
@@ -94,24 +95,30 @@ export function ResourceDetail({ id }: { id: string }) {
                 <CalendarCheckIcon /> Bookings
               </Link>
             </Button>
-            <Button variant="outline" onClick={() => toggle.mutate(resource)} disabled={toggle.isPending}>
-              <PowerIcon /> {resource.enabled ? "Disable" : "Enable"}
-            </Button>
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <PencilIcon /> Edit
-            </Button>
-            <ConfirmDialog
-              title={`Delete ${resource.name}?`}
-              description={DELETE_RESOURCE_WARNING}
-              confirmLabel="Delete resource"
-              destructive
-              onConfirm={() => remove.mutateAsync()}
-              trigger={
-                <Button variant="destructive">
-                  <Trash2Icon /> Delete
+            {can("resources", "update") && (
+              <>
+                <Button variant="outline" onClick={() => toggle.mutate(resource)} disabled={toggle.isPending}>
+                  <PowerIcon /> {resource.enabled ? "Disable" : "Enable"}
                 </Button>
-              }
-            />
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <PencilIcon /> Edit
+                </Button>
+              </>
+            )}
+            {can("resources", "delete") && (
+              <ConfirmDialog
+                title={`Delete ${resource.name}?`}
+                description={DELETE_RESOURCE_WARNING}
+                confirmLabel="Delete resource"
+                destructive
+                onConfirm={() => remove.mutateAsync()}
+                trigger={
+                  <Button variant="destructive">
+                    <Trash2Icon /> Delete
+                  </Button>
+                }
+              />
+            )}
           </>
         }
       />
@@ -184,8 +191,10 @@ export function ResourceDetail({ id }: { id: string }) {
         <TabsContent value="json">
           <RawJsonCard
             value={resource}
-            toPutBody={(r) => omitKeys(r, READ_ONLY)}
-            onReplace={(body) => replace.mutateAsync(body)}
+            {...(can("resources", "update") && {
+              toPutBody: (r: Resource) => omitKeys(r, READ_ONLY),
+              onReplace: (body: unknown) => replace.mutateAsync(body),
+            })}
           />
         </TabsContent>
       </Tabs>

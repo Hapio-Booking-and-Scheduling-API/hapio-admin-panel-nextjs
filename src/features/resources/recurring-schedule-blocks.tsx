@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/entity/confirm-dialog"
 import { ErrorAlert } from "@/components/entity/error-alert"
 import { WeekTimeline, canonicalWeek, weekdayOnlyLabel, weeklySpans } from "@/components/entity/week-timeline"
 import { WEEKDAY_LABELS } from "@/components/inputs/weekday-select"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
+import { can } from "@/lib/admin-config"
 import { hapio } from "@/lib/hapio/client"
 import { useHapioMutation } from "@/lib/hapio/hooks"
 import { WEEKDAYS, type RecurringSchedule, type RecurringScheduleBlock, type Weekday } from "@/lib/hapio/types"
@@ -57,12 +59,15 @@ export function RecurringScheduleBlocks({
   const blocks = [...query.data].sort(compareWeeklyBlocks)
   const byId = new Map(blocks.map((b) => [b.id, b]))
   const totalMinutes = blocks.reduce((sum, b) => sum + blockMinutes(b), 0)
+  const canCreate = can("schedules", "create")
+  const canUpdate = can("schedules", "update")
+  const canDelete = can("schedules", "delete")
   const spans = weeklySpans(blocks, (b) => ({
     key: b.id,
-    label: `${WEEKDAY_LABELS[b.weekday]} ${blockTimes(b)} · click to edit`,
+    label: `${WEEKDAY_LABELS[b.weekday]} ${blockTimes(b)}${canUpdate ? " · click to edit" : ""}`,
   }))
 
-  const actions = (
+  const actions = canCreate && (
     <>
       <Button size="sm" variant="outline" onClick={() => setBulk(true)}>
         <CalendarRangeIcon /> Add weekday hours
@@ -86,7 +91,7 @@ export function RecurringScheduleBlocks({
               Add the hours this resource is available on each weekday, e.g. Monday to Friday 09:00–17:00.
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent className="flex-row flex-wrap justify-center">{actions}</EmptyContent>
+          {actions && <EmptyContent className="flex-row flex-wrap justify-center">{actions}</EmptyContent>}
         </Empty>
       ) : (
         <>
@@ -94,13 +99,13 @@ export function RecurringScheduleBlocks({
             <p className="text-sm text-muted-foreground">
               {blocks.length} {blocks.length === 1 ? "block" : "blocks"} · {formatHours(totalMinutes)} per week
             </p>
-            <div className="flex flex-wrap gap-2">{actions}</div>
+            {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
           </div>
           <WeekTimeline
             days={canonicalWeek()}
             spans={spans}
             dayLabel={weekdayOnlyLabel}
-            onSpanClick={(key) => setDialog({ block: byId.get(key) })}
+            onSpanClick={canUpdate ? (key) => setDialog({ block: byId.get(key) }) : undefined}
             aria-label="Weekly hours"
           />
           <ul className="divide-y rounded-lg border">
@@ -118,23 +123,25 @@ export function RecurringScheduleBlocks({
                         <BlockChip
                           key={b.id}
                           block={b}
-                          onEdit={() => setDialog({ block: b })}
-                          onDelete={() => setDeleting(b)}
+                          onEdit={canUpdate ? () => setDialog({ block: b }) : undefined}
+                          onDelete={canDelete ? () => setDeleting(b) : undefined}
                         />
                       ))
                     ) : (
                       <span className="text-sm text-muted-foreground">No hours</span>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Add block on ${WEEKDAY_LABELS[day]}`}
-                    title={`Add block on ${WEEKDAY_LABELS[day]}`}
-                    onClick={() => setDialog({ weekday: day })}
-                  >
-                    <PlusIcon />
-                  </Button>
+                  {canCreate && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`Add block on ${WEEKDAY_LABELS[day]}`}
+                      title={`Add block on ${WEEKDAY_LABELS[day]}`}
+                      onClick={() => setDialog({ weekday: day })}
+                    >
+                      <PlusIcon />
+                    </Button>
+                  )}
                 </li>
               )
             })}
@@ -170,16 +177,25 @@ function BlockChip({
   onDelete,
 }: {
   block: RecurringScheduleBlock
-  onEdit: () => void
-  onDelete: () => void
+  onEdit?: () => void
+  onDelete?: () => void
 }) {
+  const chipClass =
+    "border-emerald-500/30 bg-emerald-500/10 tabular-nums hover:bg-emerald-500/20 dark:bg-emerald-500/15"
+  if (!onEdit && !onDelete) {
+    return (
+      <Badge variant="outline" className={chipClass}>
+        {blockTimes(block)}
+      </Badge>
+    )
+  }
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
           size="xs"
-          className="border-emerald-500/30 bg-emerald-500/10 tabular-nums hover:bg-emerald-500/20 dark:bg-emerald-500/15"
+          className={chipClass}
           aria-label={`${WEEKDAY_LABELS[block.weekday]} ${blockTimes(block)}`}
         >
           {blockTimes(block)}
@@ -187,13 +203,17 @@ function BlockChip({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuItem onSelect={onEdit}>
-          <PencilIcon /> Edit
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-          <Trash2Icon /> Delete
-        </DropdownMenuItem>
+        {onEdit && (
+          <DropdownMenuItem onSelect={onEdit}>
+            <PencilIcon /> Edit
+          </DropdownMenuItem>
+        )}
+        {onEdit && onDelete && <DropdownMenuSeparator />}
+        {onDelete && (
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            <Trash2Icon /> Delete
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

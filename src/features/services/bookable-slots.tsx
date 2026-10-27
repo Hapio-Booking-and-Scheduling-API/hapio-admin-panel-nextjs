@@ -35,6 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { can } from "@/lib/admin-config"
 import { browserTimeZone, formatDateTime, toHapioDateTime, todayIn } from "@/lib/format/datetime"
 import { isValidDuration, isZeroDuration } from "@/lib/format/duration"
 import type { BookableSlotParams } from "@/lib/hapio/client"
@@ -533,7 +534,9 @@ function SlotRow({
             </SelectContent>
           </Select>
         )}
-        <BookButton slot={slot} serviceId={service.id} search={search} endsAt={chosenEnd} />
+        {can("bookings", "create") && (
+          <BookButton slot={slot} serviceId={service.id} search={search} endsAt={chosenEnd} />
+        )}
       </div>
     </li>
   )

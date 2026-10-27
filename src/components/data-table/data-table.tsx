@@ -163,6 +163,7 @@ export function DataTable<T>({
               : data?.map((row) => (
                   <TableRow
                     key={getRowId(row)}
+                    data-row-id={getRowId(row)}
                     className={cn(rowHref && "cursor-pointer", rowClassName?.(row))}
                     onClick={(event) => {
                       if (!rowHref) return

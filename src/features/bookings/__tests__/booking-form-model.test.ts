@@ -206,6 +206,15 @@ describe("values", () => {
 })
 
 describe("toPostBody", () => {
+  it("merges fixed metadata in, over the form's", () => {
+    expect(toPostBody(filled({ metadata: '{"name":"Sam","source":"x"}' }), { source: "admin" }).metadata).toEqual({
+      name: "Sam",
+      source: "admin",
+    })
+    expect(toPostBody(filled({ metadata: "" }), { source: "admin" }).metadata).toEqual({ source: "admin" })
+    expect("metadata" in toPostBody(filled({ metadata: "" }))).toBe(false)
+  })
+
   it("sends only the required fields for a minimal booking", () => {
     expect(toPostBody(filled())).toEqual({
       service_id: HAIRCUT.id,

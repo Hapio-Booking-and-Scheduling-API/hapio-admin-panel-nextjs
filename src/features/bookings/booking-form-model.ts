@@ -119,7 +119,8 @@ export function bookingToValues(booking: Booking): Values {
   }
 }
 
-export function toPostBody(v: Values): BookingPost {
+/** `fixedMetadata` (NEXT_PUBLIC_BOOKING_CREATE_METADATA) is merged in, and wins over the form's. */
+export function toPostBody(v: Values, fixedMetadata: Record<string, unknown> = {}): BookingPost {
   const body: BookingPost = {
     service_id: v.service_id,
     location_id: v.location_id,
@@ -132,8 +133,8 @@ export function toPostBody(v: Values): BookingPost {
   // Sending price (even null) overrides Hapio's calculation.
   if (!v.auto_price) body.price = textToPrice(v.price)
   if (v.is_temporary) body.is_temporary = true
-  const metadata = textToMetadata(v.metadata)
-  if (metadata) body.metadata = metadata
+  const metadata = { ...(textToMetadata(v.metadata) ?? {}), ...fixedMetadata }
+  if (Object.keys(metadata).length) body.metadata = metadata
   const protectedMetadata = textToMetadata(v.protected_metadata)
   if (protectedMetadata) body.protected_metadata = protectedMetadata
   if (v.custom_buffers) {

@@ -85,6 +85,26 @@ those bookings and creates everything else. Add `--yes` to skip the confirmation
   `calendar.hapio.io`) and answer "n" when it asks to overwrite your own `button`, `popover`
   and `scroll-area`.
 
+## Optional settings
+
+All off by default; they're described in `.env.example`. `NEXT_PUBLIC_` settings are built into
+the app, so rebuild after changing them.
+
+- **Behind a gateway:** leave `HAPIO_API_TOKEN` empty and set `HAPIO_FORWARD_COOKIES`. The proxy
+  then forwards only those cookies to `HAPIO_BASE_URL` (HTTPS only), and your gateway adds the token.
+- **Embedding:** `ADMIN_FRAME_ANCESTORS` lists the origins that may show the panel in an iframe.
+  Otherwise only the panel itself can (`frame-ancestors 'self'`), since it has no login.
+- **Banner:** `NEXT_PUBLIC_ADMIN_BANNER_*` shows a notice above every page.
+- **Booking source:** `NEXT_PUBLIC_BOOKING_SOURCE_KEY` (and `…_LABELS`) shows a badge from a booking
+  metadata key, like "Booked by phone". `NEXT_PUBLIC_BOOKING_CREATE_METADATA` tags the bookings
+  created in the panel.
+- **A limited token:** `NEXT_PUBLIC_ADMIN_READONLY` hides the buttons for changes the token can't
+  make, instead of showing errors. `NEXT_PUBLIC_ADMIN_HIDDEN` hides whole sections.
+- **Deep links:** `/calendar?highlight=<booking id>` opens the calendar on the booking's day and
+  makes it pulse; `/bookings?highlight=<id>` does the same for a row on the current page.
+- **Live updates:** `NEXT_PUBLIC_ADMIN_REFETCH_INTERVAL` refetches bookings and the calendar every
+  N milliseconds while the tab is visible.
+
 ## Scripts
 
 | Script | What it does |

@@ -26,6 +26,7 @@ import { DetailSkeleton } from "@/components/entity/skeletons"
 import { useBreadcrumbLabel } from "@/components/layout/breadcrumbs"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { can, isShown } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { humanizeDuration } from "@/lib/format/duration"
 import { formatPrice } from "@/lib/format/price"
@@ -34,6 +35,7 @@ import { hapioKey, useBooking, useHapioMutation } from "@/lib/hapio/hooks"
 import type { Booking, BookingPut } from "@/lib/hapio/types"
 
 import { BookingEditDialog } from "./booking-form"
+import { BookingSourceBadge } from "./booking-source-badge"
 import { BookingTimeline } from "./booking-timeline"
 import { CancelBookingDialog } from "./cancel-booking-dialog"
 import { MoveToGroupDialog } from "./move-to-group-dialog"
@@ -101,12 +103,55 @@ export function BookingDetail({ id }: { id: string }) {
 
   const status = bookingStatus(booking)
   const group = booking.booking_group
+  const canUpdate = can("bookings", "update")
+
+  const groupItem = {
+    label: "Booking group",
+    value: group ? (
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="flex flex-wrap items-center gap-2">
+          <Link className={`${linkClass} font-mono text-xs`} href={`/booking-groups/${group.id}`}>
+            {shortId(group.id)}…
+          </Link>
+          <MetadataPreview value={group.metadata} />
+        </span>
+        <span className="flex flex-wrap gap-1">
+          <Button variant="outline" size="xs" onClick={() => setMoving(true)}>
+            <FolderInputIcon /> Move
+          </Button>
+          <ConfirmDialog
+            title="Remove from group?"
+            description={`The booking is kept but no longer belongs to group ${shortId(group.id)}.`}
+            confirmLabel="Remove from group"
+            onConfirm={() => actions.setGroup.mutateAsync({ id: booking.id, groupId: null })}
+            trigger={
+              <Button variant="outline" size="xs">
+                <FolderMinusIcon /> Remove
+              </Button>
+            }
+          />
+        </span>
+      </div>
+    ) : (
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="text-muted-foreground">Not in a group</span>
+        <Button variant="outline" size="xs" onClick={() => setMoving(true)}>
+          <FolderInputIcon /> Add to group
+        </Button>
+      </div>
+    ),
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title={bookingTitle(booking)}
-        badges={<BookingStatusBadge booking={booking} />}
+        badges={
+          <>
+            <BookingStatusBadge booking={booking} />
+            <BookingSourceBadge booking={booking} />
+          </>
+        }
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>{bookingTimeRange(booking)}</span>
@@ -115,7 +160,7 @@ export function BookingDetail({ id }: { id: string }) {
         }
         actions={
           <>
-            {booking.is_temporary && !booking.is_canceled && (
+            {canUpdate && booking.is_temporary && !booking.is_canceled && (
               <Button
                 variant="outline"
                 onClick={() => actions.finalize.mutate(booking.id)}
@@ -124,7 +169,7 @@ export function BookingDetail({ id }: { id: string }) {
                 <CheckCircle2Icon /> Finalize
               </Button>
             )}
-            {booking.is_canceled ? (
+            {!canUpdate ? null : booking.is_canceled ? (
               <Button
                 variant="outline"
                 onClick={() => actions.restore.mutate(booking.id)}
@@ -137,9 +182,12 @@ export function BookingDetail({ id }: { id: string }) {
                 <BanIcon /> Cancel booking
               </Button>
             )}
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <PencilIcon /> Edit
-            </Button>
+            {canUpdate && (
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                <PencilIcon /> Edit
+              </Button>
+            )}
+            {can("bookings", "delete") && (
             <ConfirmDialog
               title="Delete this booking permanently?"
               description={
@@ -156,6 +204,7 @@ export function BookingDetail({ id }: { id: string }) {
                 </Button>
               }
             />
+            )}
           </>
         }
       />
@@ -220,42 +269,7 @@ export function BookingDetail({ id }: { id: string }) {
                   label: "Price",
                   value: booking.price === null ? <span className="text-muted-foreground">No price</span> : formatPrice(booking.price),
                 },
-                {
-                  label: "Booking group",
-                  value: group ? (
-                    <div className="flex flex-col items-start gap-1.5">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <Link className={`${linkClass} font-mono text-xs`} href={`/booking-groups/${group.id}`}>
-                          {shortId(group.id)}…
-                        </Link>
-                        <MetadataPreview value={group.metadata} />
-                      </span>
-                      <span className="flex flex-wrap gap-1">
-                        <Button variant="outline" size="xs" onClick={() => setMoving(true)}>
-                          <FolderInputIcon /> Move
-                        </Button>
-                        <ConfirmDialog
-                          title="Remove from group?"
-                          description={`The booking is kept but no longer belongs to group ${shortId(group.id)}.`}
-                          confirmLabel="Remove from group"
-                          onConfirm={() => actions.setGroup.mutateAsync({ id: booking.id, groupId: null })}
-                          trigger={
-                            <Button variant="outline" size="xs">
-                              <FolderMinusIcon /> Remove
-                            </Button>
-                          }
-                        />
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-start gap-1.5">
-                      <span className="text-muted-foreground">Not in a group</span>
-                      <Button variant="outline" size="xs" onClick={() => setMoving(true)}>
-                        <FolderInputIcon /> Add to group
-                      </Button>
-                    </div>
-                  ),
-                },
+                ...(isShown("booking-groups") ? [groupItem] : []),
               ]}
             />
           </SectionCard>
@@ -298,8 +312,8 @@ export function BookingDetail({ id }: { id: string }) {
         <TabsContent value="json">
           <RawJsonCard
             value={booking}
-            toPutBody={toBookingPutBody}
-            onReplace={(body) => replace.mutateAsync(body)}
+            toPutBody={canUpdate ? toBookingPutBody : undefined}
+            onReplace={canUpdate ? (body) => replace.mutateAsync(body) : undefined}
           />
         </TabsContent>
       </Tabs>

@@ -12,6 +12,7 @@ import { SectionCard } from "@/components/entity/section-card"
 import { EntityCombobox } from "@/components/inputs/entity-combobox"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { indexById, useAllResources, useHapioMutation } from "@/lib/hapio/hooks"
@@ -46,6 +47,8 @@ export function ServiceResourcesTab({
   const associated = [...(query.data ?? [])].sort((a, b) => nameOf(a.resource_id).localeCompare(nameOf(b.resource_id)))
   const associatedIds = associated.map((a) => a.resource_id)
 
+  const canChange = can("services", "update")
+
   const columns: Column<ResourceService>[] = [
     {
       id: "name",
@@ -70,21 +73,25 @@ export function ServiceResourcesTab({
       className: "hidden sm:table-cell",
       cell: (a) => formatDateTime(a.created_at),
     },
-    {
-      id: "actions",
-      header: <span className="sr-only">Actions</span>,
-      className: "w-10 text-right",
-      cell: (a) => (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Remove ${nameOf(a.resource_id)} from this service`}
-          onClick={() => setRemoving(a)}
-        >
-          <UnlinkIcon />
-        </Button>
-      ),
-    },
+    ...(canChange
+      ? [
+          {
+            id: "actions",
+            header: <span className="sr-only">Actions</span>,
+            className: "w-10 text-right",
+            cell: (a: ResourceService) => (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${nameOf(a.resource_id)} from this service`}
+                onClick={() => setRemoving(a)}
+              >
+                <UnlinkIcon />
+              </Button>
+            ),
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -93,27 +100,29 @@ export function ServiceResourcesTab({
       description="The people, rooms or equipment that can deliver this service. Bookable slots only include associated resources."
     >
       <div className="flex flex-col gap-4">
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (selected) associate.mutate(selected)
-          }}
-        >
-          <div className="w-full sm:w-72">
-            <EntityCombobox
-              kind="resource"
-              value={selected}
-              onChange={setSelected}
-              exclude={associatedIds}
-              placeholder="Select a resource to associate…"
-              aria-label="Resource to associate"
-            />
-          </div>
-          <Button type="submit" disabled={!selected || associate.isPending} aria-busy={associate.isPending}>
-            {associate.isPending ? <Spinner aria-hidden /> : <Link2Icon />} Associate resource
-          </Button>
-        </form>
+        {canChange && (
+          <form
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (selected) associate.mutate(selected)
+            }}
+          >
+            <div className="w-full sm:w-72">
+              <EntityCombobox
+                kind="resource"
+                value={selected}
+                onChange={setSelected}
+                exclude={associatedIds}
+                placeholder="Select a resource to associate…"
+                aria-label="Resource to associate"
+              />
+            </div>
+            <Button type="submit" disabled={!selected || associate.isPending} aria-busy={associate.isPending}>
+              {associate.isPending ? <Spinner aria-hidden /> : <Link2Icon />} Associate resource
+            </Button>
+          </form>
+        )}
         <DataTable
           columns={columns}
           data={query.data ? associated : undefined}

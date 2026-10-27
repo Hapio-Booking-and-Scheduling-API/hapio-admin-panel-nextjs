@@ -14,6 +14,7 @@ import { DateTimeInput } from "@/components/inputs/date-time-input"
 import { EntityCombobox } from "@/components/inputs/entity-combobox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { can } from "@/lib/admin-config"
 import { formatDateTime } from "@/lib/format/datetime"
 import { hapio } from "@/lib/hapio/client"
 import { indexById, useAllLocations, useHapioMutation } from "@/lib/hapio/hooks"
@@ -113,7 +114,11 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
       cell: (b) => <span className="tabular-nums">{formatMinutes(spanMinutes(b.starts_at, b.ends_at))}</span>,
     },
     { id: "type", header: "Type", cell: (b) => <ScheduleBlockTypeBadge available={b.is_available} /> },
-    {
+  ]
+  const canUpdate = can("schedules", "update")
+  const canDelete = can("schedules", "delete")
+  if (canUpdate || canDelete) {
+    columns.push({
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       className: "w-10 text-right",
@@ -121,19 +126,23 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
         <RowActions
           label={`Actions for block ${formatDateTime(b.starts_at)}`}
           actions={[
-            { label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ block: b }) },
-            {
-              label: "Delete",
-              icon: <Trash2Icon />,
-              destructive: true,
-              separatorBefore: true,
-              onSelect: () => setDeleting(b),
-            },
+            ...(canUpdate ? [{ label: "Edit", icon: <PencilIcon />, onSelect: () => setDialog({ block: b }) }] : []),
+            ...(canDelete
+              ? [
+                  {
+                    label: "Delete",
+                    icon: <Trash2Icon />,
+                    destructive: true,
+                    separatorBefore: canUpdate,
+                    onSelect: () => setDeleting(b),
+                  },
+                ]
+              : []),
           ]}
         />
       ),
-    },
-  ]
+    })
+  }
 
   const filtersActive = !!filters.location || !!filters.from || !!filters.to
 
@@ -182,9 +191,11 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
           </label>
           <SortSelect value={list.sort} onChange={list.setSort} options={SORT_OPTIONS} />
         </FilterBar>
-        <Button size="sm" onClick={() => setDialog({})}>
-          <PlusIcon /> New block
-        </Button>
+        {can("schedules", "create") && (
+          <Button size="sm" onClick={() => setDialog({})}>
+            <PlusIcon /> New block
+          </Button>
+        )}
       </div>
       <DataTable
         columns={columns}
@@ -205,7 +216,7 @@ export function ScheduleBlocksTab({ resource }: { resource: Resource }) {
             : "Add a block to open extra time or to block out time like holidays."
         }
         emptyAction={
-          filtersActive ? undefined : (
+          filtersActive || !can("schedules", "create") ? undefined : (
             <Button size="sm" variant="outline" onClick={() => setDialog({})}>
               <PlusIcon /> New block
             </Button>

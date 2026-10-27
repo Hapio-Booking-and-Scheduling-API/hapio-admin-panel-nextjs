@@ -65,6 +65,17 @@ describe("retryDelay", () => {
 })
 
 describe("makeQueryClient", () => {
+  it("refetches bookings on an interval only when asked", () => {
+    expect(makeQueryClient(false).getQueryDefaults(["hapio", "bookings", "list", {}]).refetchInterval).toBeUndefined()
+
+    const client = makeQueryClient(10_000)
+    expect(client.getQueryDefaults(["hapio", "bookings", "calendar", {}])).toMatchObject({
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: false,
+    })
+    expect(client.getQueryDefaults(["hapio", "locations", "list", {}]).refetchInterval).toBeUndefined()
+  })
+
   it("sets the query defaults", () => {
     const queries = makeQueryClient().getDefaultOptions().queries
     expect(queries?.staleTime).toBe(30_000)

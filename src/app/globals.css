@@ -551,3 +551,25 @@
   }
 }
             
+/* ?highlight=<booking id>: the booking's calendar event or list row pulses a few times. */
+.admin-highlight {
+  animation: admin-highlight 1.2s ease-in-out 3;
+}
+
+@keyframes admin-highlight {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--ring);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-highlight {
+    animation: none;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
