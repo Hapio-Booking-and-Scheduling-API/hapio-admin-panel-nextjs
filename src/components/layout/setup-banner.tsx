@@ -3,7 +3,7 @@
 import { KeyRoundIcon, TriangleAlertIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { describeError, isHapioError } from "@/lib/hapio/errors"
+import { describeError, hasOwnMessage, isHapioError } from "@/lib/hapio/errors"
 import { useProject } from "@/lib/hapio/hooks"
 
 /** Explains what's wrong when the proxy has no token or Hapio rejects it. */
@@ -22,6 +22,16 @@ export function SetupBanner() {
             <code>HAPIO_API_TOKEN=…</code>, then restart the dev server.
           </p>
         </AlertDescription>
+      </Alert>
+    )
+  }
+
+  // A proxy in front of Hapio, like the website demo's, explains its own 401s.
+  if (error.status === 401 && hasOwnMessage(error)) {
+    return (
+      <Alert variant="destructive">
+        <TriangleAlertIcon />
+        <AlertTitle>{error.message}</AlertTitle>
       </Alert>
     )
   }

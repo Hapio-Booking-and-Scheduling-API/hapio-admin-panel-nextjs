@@ -52,6 +52,12 @@ const STATUS_HINTS: Record<number, string> = {
 /** Laravel's stock messages, which say less than the hints above. */
 const GENERIC_MESSAGES = new Set(["unauthenticated.", "not found.", "not found"])
 
+/** Whether the response says more than Laravel's stock message or the status hint. */
+export function hasOwnMessage(error: HapioApiError): boolean {
+  const message = error.message.trim()
+  return message !== "" && message !== STATUS_HINTS[error.status] && !GENERIC_MESSAGES.has(message.toLowerCase())
+}
+
 /** A human-readable one-liner for toasts and alerts. */
 export function describeError(error: unknown): string {
   if (isHapioError(error)) {
@@ -60,7 +66,7 @@ export function describeError(error: unknown): string {
     const hint = STATUS_HINTS[error.status]
     const message = error.message.trim()
     if (!hint) return message || `Request failed (${error.status}).`
-    if (!message || message === hint || GENERIC_MESSAGES.has(message.toLowerCase())) return hint
+    if (!hasOwnMessage(error)) return hint
     // Hapio's 403 messages ("This action is unauthorized.") never say what to fix.
     if (error.status === 403) return `${/[.!?]$/.test(message) ? message : `${message}.`} ${hint}`
     return message

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { applyValidationErrors, describeError, HapioApiError, isHapioError } from "@/lib/hapio/errors"
+import { applyValidationErrors, describeError, hasOwnMessage, HapioApiError, isHapioError } from "@/lib/hapio/errors"
 
 const apiError = (init: Partial<ConstructorParameters<typeof HapioApiError>[0]> & { status: number }) =>
   new HapioApiError({ message: "", ...init })
@@ -112,6 +112,19 @@ describe("describeError", () => {
     expect(describeError("a string")).toBe("Something went wrong.")
     expect(describeError(undefined)).toBe("Something went wrong.")
     expect(describeError({ message: "plain object" })).toBe("Something went wrong.")
+  })
+})
+
+describe("hasOwnMessage", () => {
+  it("is false without a message, for Laravel's stock messages and for the status hint", () => {
+    expect(hasOwnMessage(apiError({ status: 401 }))).toBe(false)
+    expect(hasOwnMessage(apiError({ status: 401, message: "Unauthenticated." }))).toBe(false)
+    expect(hasOwnMessage(apiError({ status: 404, message: "Not found" }))).toBe(false)
+    expect(hasOwnMessage(apiError({ status: 401, message: "The Hapio API token is missing or invalid." }))).toBe(false)
+  })
+
+  it("is true for a message of the server's own", () => {
+    expect(hasOwnMessage(apiError({ status: 401, message: "The demo has ended. Start a new one." }))).toBe(true)
   })
 })
 
