@@ -21,6 +21,13 @@ test.describe("setup banner", () => {
     await expect(ui.main().getByText("Overview of your Hapio project.")).toBeVisible()
   })
 
+  test("401 with a proxy's own message: that message, without the token hint", async ({ page, net }) => {
+    await net.fail("project", { status: 401, body: { message: "The demo has ended. Start a new one." } })
+    await page.goto("/")
+    await expect(banner(page, "The demo has ended. Start a new one.")).toBeVisible()
+    await expect(banner(page, "Hapio rejected the API token")).toHaveCount(0)
+  })
+
   test("network failure: \"Can't reach Hapio\"", async ({ page, net, consoleGuard }) => {
     consoleGuard.allow(/net::ERR_FAILED/)
     await net.abort("project")
